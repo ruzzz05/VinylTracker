@@ -48,7 +48,8 @@ export function listZip(buffer) {
 export async function readSpotifyZip(buffer) {
   const entries = [];
   for (const f of listZip(buffer)) {
-    if (!/Streaming_History_Audio[^/]*\.json$/.test(f.name)) continue;
+    // Historial ampliado (Streaming_History_Audio_*) o paquete básico (StreamingHistory0.json / StreamingHistory_music_0.json)
+    if (!/(Streaming_History_Audio[^/]*|StreamingHistory(_music)?_?\d*)\.json$/.test(f.name)) continue;
     const text = new TextDecoder().decode(await f.read());
     entries.push(...JSON.parse(text));
   }

@@ -11,7 +11,7 @@ import { h, safeUrl } from './dom.js';
 import { buildStats } from './stats.js';
 import { artistsView, tracksView, statsView } from './statsview.js';
 
-const VERSION = '1.3.0';
+const VERSION = '1.3.1';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -157,7 +157,7 @@ function vRanking() {
   const root = h('div');
   const hasHistory = Object.keys(state.history).length > 0;
   const hasApi = Object.keys(state.apiAlbums).length > 0;
-  if (!hasHistory && !hasApi) {
+  if (!hasHistory && !hasApi && !state.stats) {
     root.append(h('div', { class: 'empty' },
       h('p', null, 'Todavía no hay datos de escucha.'),
       h('p', { class: 'muted' }, 'Conecta Spotify o importa tu historial (export de datos) en Ajustes.'),
@@ -174,6 +174,11 @@ function vRanking() {
   if (view === 'stats') {
     root.append(statsView({ stats: state.stats, history: state.history, collection: state.collection, ranking: rankingList().slice(0, 40),
       months: state.months, onImport: goSettings }));
+    return root;
+  }
+  if (!hasHistory && !hasApi) {
+    root.append(h('div', { class: 'empty' }, h('p', null, 'Tu export no trae nombres de álbum.'),
+      h('p', { class: 'muted' }, 'Es el paquete básico ("Datos de la cuenta"). Mira Artistas, Canciones y Estadísticas. Para ver álbumes, conecta Spotify o importa el "Historial de reproducciones ampliado".')));
     return root;
   }
   if (!hasHistory) root.append(h('p', { class: 'muted' }, 'Ranking aproximado con tus tops de Spotify. Para minutos reales importa el export de tu historial en Ajustes.'));
@@ -510,8 +515,8 @@ function vSettings() {
   const file = h('input', { type: 'file', accept: '.zip,.json,application/zip,application/json', multiple: true });
   const info = state.historyInfo;
   root.append(h('div', { class: 'card' }, h('h3', null, 'Historial de Spotify (minutos reales)'),
-    h('p', { class: 'muted' }, 'spotify.com/account/privacy → "Historial de reproducciones ampliado". Importa el .zip tal cual (o todos los .json a la vez; una nueva importación sustituye a la anterior). Se procesa en tu móvil, no se sube a ningún sitio.'),
-    info ? h('p', null, `${info.albums} álbumes · ${info.plays} reproducciones · ${info.from} → ${info.to}`) : null,
+    h('p', { class: 'muted' }, 'spotify.com/account/privacy → "Historial de reproducciones ampliado". Importa el .zip tal cual (o todos los .json a la vez; una nueva importación sustituye a la anterior). Sirven los dos paquetes: el ampliado (con álbumes, tarda más) y el básico "Datos de la cuenta" (último año, sin álbumes, llega antes). Se procesa en tu móvil, no se sube a ningún sitio.'),
+    info ? h('p', null, `${info.basic ? 'paquete básico (sin álbumes)' : info.albums + ' álbumes'} · ${info.plays} reproducciones · ${info.from} → ${info.to}`) : null,
     file, h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => importHistory(file.files) }, 'Importar'),
       info ? h('button', { class: 'btn danger', onclick: async () => { await store.del('history'); await store.del('historyInfo'); await store.del('stats'); state.history = {}; state.historyInfo = null; state.stats = null; render(); } }, 'Borrar historial') : null)));
 
@@ -545,24 +550,27 @@ async function importHistory(files) {
   if (!files || !files.length) return toast('Elige el .zip o los .json del export', true);
   try {
     setStatus('Importando…');
-    const entries = [];
+    let entries = [];
     for (const f of files) {
       if (/\.zip$/i.test(f.name)) entries.push(...await readSpotifyZip(await f.arrayBuffer()));
       else { const j = JSON.parse(await f.text()); if (Array.isArray(j)) entries.push(...j); }
     }
-    const { into, used, skipped } = C.aggregateHistory(entries, {});
-    if (!Object.keys(into).length) throw new Error('No encontré reproducciones con álbum. Pide "Historial de reproducciones ampliado" (el normal no incluye álbum).');
-    const months = Object.values(into).flatMap(a => Object.keys(a.months)).sort();
-    const info = { albums: Object.keys(into).length, plays: used, from: months[0], to: months[months.length - 1], skipped };
+    entries = C.normalizeEntries(entries);      // el paquete básico ("Datos de la cuenta") se adapta al ampliado
     setStatus('Calculando estadísticas…');
     await new Promise(r => setTimeout(r, 30));          // deja pintar el aviso antes del cálculo
     const stats = buildStats(entries);
+    if (!stats.total.rows) throw new Error('No encontré reproducciones de música en esos archivos. Elige el .zip de Spotify tal cual o sus .json (StreamingHistory…).');
+    // Álbumes: solo el historial ampliado los trae; el básico da artistas, canciones y estadísticas
+    const { into, used, skipped } = C.aggregateHistory(entries, {});
+    const info = { albums: Object.keys(into).length, plays: stats.total.plays, from: stats.total.first, to: stats.total.last, skipped, basic: !Object.keys(into).length };
     await store.set('history', into); await store.set('historyInfo', info); await store.set('stats', stats);
     state.history = into; state.historyInfo = info; state.stats = stats;
-    toast(`Historial importado: ${info.albums} álbumes`);
+    toast(info.basic ? `Importado: ${S_fmt(stats.total.plays)} reproducciones (sin álbumes: es el paquete básico)` : `Historial importado: ${info.albums} álbumes`);
+    if (info.basic && state.rankView === 'albums') { state.rankView = 'stats'; prefs.set('rankView', 'stats'); }
     go('ranking');
   } catch (e) { toast(e.message, true); setStatus(''); }
 }
+const S_fmt = n => new Intl.NumberFormat('es-ES').format(n);
 
 async function refreshApi() {
   try {

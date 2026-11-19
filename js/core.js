@@ -313,3 +313,22 @@ export function syncStatus({ online = true, syncing = false, error = '', dirty =
   if (last) return { state: 'ok', label: 'Sincronizado', detail: lastText };
   return { state: 'unknown', label: 'Sin sincronizar todavía', detail: lastText };
 }
+
+// El paquete básico de Spotify ("Datos de la cuenta", StreamingHistory_music_*.json) trae
+// { endTime: "2026-05-01 10:20" (UTC), artistName, trackName, msPlayed } y NO trae álbum.
+// Se convierte al formato del historial ampliado para poder usar las mismas estadísticas.
+export function normalizeEntries(entries) {
+  return entries.map(e => {
+    if (e && e.endTime && e.artistName !== undefined) {
+      const iso = String(e.endTime).trim().replace(' ', 'T');
+      return {
+        ts: /Z$|[+-]\d\d:?\d\d$/.test(iso) ? iso : (iso.length === 16 ? iso + ':00Z' : iso + 'Z'),
+        ms_played: e.msPlayed || 0,
+        master_metadata_album_artist_name: e.artistName || null,
+        master_metadata_track_name: e.trackName || null,
+        master_metadata_album_album_name: null
+      };
+    }
+    return e;
+  });
+}

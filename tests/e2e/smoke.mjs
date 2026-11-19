@@ -210,6 +210,27 @@ assert.ok((await p2.inputValue('textarea')).includes('code=ABC123'));
 await p2.screenshot({ path: path.join(SHOTS, '8-casi-listo.png') });
 await ctx2.close();
 
+// Paquete básico de Spotify ("Datos de la cuenta"): sin álbumes, pero con artistas, canciones y estadísticas
+const basic = Array.from({ length: 30 }, (_, i) => ({ endTime: `2026-11-${String(1 + (i % 18)).padStart(2, '0')} 21:${String(10 + i).padStart(2, '0')}`,
+  artistName: i % 3 ? 'Nirvana' : 'Delta Goodrem', trackName: 'tema ' + (i % 5), msPlayed: 180000 }));
+writeFileSync(path.join(SHOTS, 'StreamingHistory_music_0.json'), JSON.stringify(basic));
+const ctx3 = await browser.newContext({ ...devices['iPhone 14'], locale: 'es-ES' });
+await ctx3.route('https://ruzzz05.github.io/mi-app/**', r => r.fulfill({ status: 200, contentType: 'text/csv', headers: { 'access-control-allow-origin': '*' }, body: CSV }));
+const p3 = await ctx3.newPage();
+p3.setDefaultTimeout(15000);
+await p3.goto(BASE);
+await p3.click('[data-tab=ajustes]');
+await p3.setInputFiles('input[type=file]', path.join(SHOTS, 'StreamingHistory_music_0.json'));
+await p3.click('text=Importar');
+await p3.waitForSelector('.hero .big');                                   // salta a Estadísticas porque no hay álbumes
+assert.ok(!/NaN|undefined|null/.test(await p3.textContent('#view')));
+await p3.click('.seg button:has-text("Artistas")');
+await p3.waitForSelector('.row.static');
+assert.match(await p3.textContent('#view'), /Nirvana/);
+await p3.click('.seg button:has-text("Álbumes")');
+await p3.waitForSelector('text=no trae nombres de álbum');
+await ctx3.close();
+
 assert.deepEqual(errors, []);
 console.log('OK: flujo completo, capturas en', SHOTS);
 await browser.close();

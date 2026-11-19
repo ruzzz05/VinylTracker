@@ -55,7 +55,7 @@ export function tracksView({ stats, months, now = new Date(), onImport }) {
 function needImport(onImport) {
   return h('div', { class: 'empty' },
     h('p', null, 'Esto necesita tu historial de Spotify.'),
-    h('p', { class: 'muted' }, 'Importa el export (Historial de reproducciones ampliado) en Ajustes. Si ya lo habías importado antes de esta versión, vuelve a importarlo para calcular estas estadísticas.'),
+    h('p', { class: 'muted' }, 'Importa el export de Spotify en Ajustes (sirve el paquete básico "Datos de la cuenta", que llega antes, o el ampliado). Si ya lo habías importado antes de esta versión, vuelve a importarlo para calcular estas estadísticas.'),
     h('div', { class: 'btns', style: 'justify-content:center' }, h('button', { class: 'btn', onclick: onImport }, 'Ir a Ajustes')));
 }
 
@@ -183,7 +183,7 @@ function statsLite({ collection, ranking, onImport }) {
   const root = h('div', { class: 'stats' });
   root.append(card('Estadísticas de escucha',
     h('p', null, 'Para ver minutos por día, mes y año, tus horas punta, rachas y récords necesito tu historial de Spotify.'),
-    h('p', { class: 'muted' }, 'Pídelo en spotify.com/account/privacy (Historial de reproducciones ampliado) e impórtalo en Ajustes. Se procesa en tu móvil.'),
+    h('p', { class: 'muted' }, 'Pídelo en spotify.com/account/privacy: "Datos de la cuenta" llega antes (último año) y "Historial de reproducciones ampliado" trae todo y los álbumes. Impórtalo en Ajustes; se procesa en tu móvil.'),
     h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: onImport }, 'Ir a Ajustes'))));
   const top = (ranking || []).slice(0, 40);
   if (top.length) {

@@ -130,3 +130,19 @@ test('buildStats poda las canciones sueltas cuando hay demasiadas', () => {
   assert.ok(Object.keys(s.tracks).length < 25100);
   assert.ok(s.tracks['X\u0001t0']);                                         // la repetida se conserva
 });
+
+test('export básico ("Datos de la cuenta"): se normaliza y alimenta las estadísticas', () => {
+  const basic = [
+    { endTime: '2026-11-19 22:10', artistName: 'A', trackName: 'a1', msPlayed: 200000 },
+    { endTime: '2026-11-19 22:20', artistName: 'A', trackName: 'a1', msPlayed: 200000 },
+    { endTime: '2026-11-18 09:00', artistName: 'B', trackName: 'b1', msPlayed: 15000 }
+  ];
+  const norm = C.normalizeEntries(basic);
+  assert.equal(norm[0].ts, '2026-11-19T22:10:00Z'); assert.equal(norm[0].master_metadata_album_artist_name, 'A');
+  const s2 = S.buildStats(norm);
+  assert.equal(s2.total.rows, 3); assert.equal(s2.total.plays, 2);          // 15 s no cuenta como reproducción
+  assert.equal(S.topArtists(s2, 1, NOW)[0].name, 'A');
+  assert.equal(S.persona(s2).peakHour, 22);
+  assert.deepEqual(C.aggregateHistory(norm, {}).into, {});                    // sin álbumes: no hay ranking de álbumes
+  assert.deepEqual(C.normalizeEntries([ENTRIES[0]])[0], ENTRIES[0]);          // el ampliado pasa sin tocar
+});
