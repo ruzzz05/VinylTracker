@@ -19,3 +19,9 @@ export async function loadBase({ force = false } = {}) {
 }
 
 export const combine = (base, extras) => mergeCollection(base, extras);
+
+// Cuándo se leyó por última vez el CSV de mi-app (0 si nunca)
+export async function csvAt() {
+  const c = await store.get('collection.csv');
+  return c ? c.at : 0;
+}

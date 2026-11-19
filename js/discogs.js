@@ -50,8 +50,3 @@ export async function lookup(album, currency = 'EUR') {
   await store.set(ck, { at: Date.now(), v });
   return v;
 }
-
-export async function collectionValue(username) {
-  const d = await call(`/users/${encodeURIComponent(username)}/collection/value`);
-  return d;   // { minimum, median, maximum } como texto (p. ej. "€908.73")
-}

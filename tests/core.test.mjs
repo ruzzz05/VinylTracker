@@ -134,3 +134,24 @@ test('filterWall: buscador, estilo y orden; allTags', () => {
   assert.deepEqual(C.filterWall(l, '', 'rap').map(a => a.name), ['Dos', 'Uno']);
   assert.deepEqual(C.allTags(l), ['pop', 'rap']);
 });
+
+test('syncStatus: mismos estados y prioridad que mi-app', () => {
+  const now = 1_000_000_000;
+  assert.equal(C.syncStatus({ online: false, now }).state, 'offline');
+  assert.equal(C.syncStatus({ online: false, syncing: true, now }).state, 'offline');   // sin conexión manda sobre todo
+  assert.equal(C.syncStatus({ syncing: true, error: 'x', now }).state, 'syncing');
+  assert.equal(C.syncStatus({ error: 'Firestore respondió 403', lastSyncAt: now - 5000, now }).state, 'error');
+  assert.equal(C.syncStatus({ dirty: true, now }).state, 'pending');
+  const ok = C.syncStatus({ lastSyncAt: now - 5 * 60000, now });
+  assert.equal(ok.state, 'ok'); assert.match(ok.detail, /hace 5 min/);
+  assert.equal(C.syncStatus({ now }).state, 'unknown');
+  assert.equal(C.syncStatus({ lastSyncAt: now + 99999, now }).detail, 'Última sincronización: hace un momento');
+});
+
+test('relativeTime', () => {
+  const now = 10 * 86400000;
+  assert.equal(C.relativeTime(now - 2 * 3600000, now), 'hace 2 h');
+  assert.equal(C.relativeTime(now - 86400000, now), 'hace 1 día');
+  assert.equal(C.relativeTime(now - 3 * 86400000, now), 'hace 3 días');
+  assert.equal(C.relativeTime(0, now), '');
+});

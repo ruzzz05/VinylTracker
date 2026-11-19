@@ -116,6 +116,15 @@ await page.click('[data-tab=coleccion]');
 await page.waitForSelector('.wall .tile');
 assert.equal((await page.$$('.wall .tile')).length, 3);
 assert.match(await page.textContent('.counter'), /3 vinilos/);
+// Menú de la colección: sin recuento ni valor de Discogs, con el punto de sincronización
+assert.equal((await page.textContent('#status')).trim(), '', 'la cabecera no debe enseñar el recuento');
+assert.ok(!/en mi-app|añadidos|Valor en Discogs|Calcular valor/.test(await page.textContent('#view')), 'sobra texto en el menú de la colección');
+assert.equal(await page.getAttribute('#sync-dot', 'data-state'), 'ok');
+await page.click('#sync-btn');
+await page.waitForFunction(() => document.querySelector('#sync-dot')?.dataset.state === 'ok' && !document.querySelector('#sync-btn')?.disabled);
+await page.click('#sync-dot');
+await page.waitForSelector('#toast:not([hidden])');
+assert.match(await page.textContent('#toast'), /Sincronizado\. Última sincronización/);
 await page.screenshot({ path: path.join(SHOTS, '6-coleccion.png') });
 // Buscador y filtro por estilo
 await page.fill('input[type=search]', 'rosal');

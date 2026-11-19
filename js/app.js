@@ -8,7 +8,7 @@ import * as fb from './firebase.js';
 import * as collection from './collection.js';
 import { readSpotifyZip } from './zip.js';
 
-const VERSION = '1.1.3';
+const VERSION = '1.2.0';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -73,6 +73,7 @@ const state = {
   history: {}, apiAlbums: {}, apiAt: 0, historyInfo: null,
   base: [], extras: [], extrasAt: 0, owned: null, collection: [],
   storeIndex: [], storeDate: '',
+  csvAt: 0, syncing: false, syncError: '',
   prices: new Map(),          // key -> { discogs }
   filter: 'todos', search: '', busy: ''
 };
@@ -88,6 +89,7 @@ async function loadAll() {
   try { state.base = await collection.loadBase(); } catch (e) { toast('No se pudo leer tu colección de mi-app: ' + e.message, true); }
   const ex = await fb.cachedExtras();
   if (ex) { state.extras = ex.albums; state.extrasAt = ex.at; }
+  state.csvAt = await collection.csvAt();
   rebuildCollection();
   try {
     const r = await fetch('data/stores.json');
@@ -117,8 +119,7 @@ document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click
 
 function render() {
   view.replaceChildren(({ ranking: vRanking, coleccion: vCollection, comprar: vBuy, ajustes: vSettings })[state.tab]());
-  const n = state.collection.length;
-  setStatus(n ? `${n} vinilos en tu colección` : '');
+  setStatus('');
 }
 
 // ---------- Ranking ----------
@@ -189,30 +190,36 @@ function tileEl(a) {
     : h('button', { class: 'tile', onclick: () => openSheet({ ...a, key: C.albumKey(a.artist, a.name), owned: true, offers: [] }) }, media, cap);
 }
 
+// ---------- Estado de sincronización (punto de color como en mi-app) ----------
+const SYNC_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 00-14.5-4.5L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0014.5 4.5L20 16"/><path d="M20 20v-4h-4"/></svg>';
+const icon = svg => { const t = document.createElement('template'); t.innerHTML = svg; return t.content.firstChild; };
+
+// Última lectura completa: con sesión, la más antigua entre el CSV y la nube; sin sesión, solo el CSV
+const syncedAt = () => (fb.isLoggedIn() ? Math.min(state.csvAt, state.extrasAt) : state.csvAt);
+const currentSync = () => C.syncStatus({ online: navigator.onLine !== false, syncing: state.syncing, error: state.syncError, lastSyncAt: syncedAt(), now: Date.now() });
+
+function updateSyncUi() {
+  const dot = $('#sync-dot'), btn = $('#sync-btn');
+  if (dot) { const st = currentSync(); dot.dataset.state = st.state; dot.setAttribute('aria-label', 'Sincronización: ' + st.label); dot.title = st.label; }
+  if (btn) { btn.classList.toggle('spin', state.syncing); btn.disabled = state.syncing; }
+}
+window.addEventListener('online', updateSyncUi);
+window.addEventListener('offline', updateSyncUi);
+
 function vCollection() {
   const root = h('div');
-  const logged = fb.isLoggedIn();
   const q = h('input', { type: 'search', placeholder: 'Buscar artista o álbum', value: state.search, 'aria-label': 'Buscar', autocomplete: 'off' });
-  const sel = h('select', { 'aria-label': 'Filtrar por estilo' }, h('option', { value: '' }, 'Todos los estilos'),
-    C.allTags(state.collection).map(t => h('option', { value: t }, t)));
-  sel.value = C.allTags(state.collection).includes(state.tag) ? state.tag : '';
+  const tags = C.allTags(state.collection);
+  const sel = h('select', { 'aria-label': 'Filtrar por estilo' }, h('option', { value: '' }, 'Todos los estilos'), tags.map(t => h('option', { value: t }, t)));
+  sel.value = tags.includes(state.tag) ? state.tag : '';
   state.tag = sel.value;
-  const syncBtn = h('button', { class: 'btn sec', onclick: syncExtras }, 'Sincronizar');
-  root.append(h('div', { class: 'controls' }, q, sel),
-    h('div', { class: 'btns' },
+  const dot = h('button', { class: 'sync-dot', id: 'sync-dot', type: 'button', onclick: () => { const st = currentSync(); toast(`${st.label}. ${st.detail}`, st.state === 'error'); } });
+  const syncBtn = h('button', { class: 'iconbtn', id: 'sync-btn', type: 'button', 'aria-label': 'Sincronizar ahora', title: 'Sincronizar ahora', onclick: syncAll }, icon(SYNC_ICON));
+  root.append(q,
+    h('div', { class: 'filters' }, sel, h('div', { class: 'syncgroup' }, dot, syncBtn)),
+    h('div', { class: 'actions' },
       h('button', { class: 'btn', onclick: openRandom }, 'Disco aleatorio'),
-      fb.isOwner() ? h('button', { class: 'btn sec', onclick: openAdd }, '+ Añadir disco') : null,
-      logged ? syncBtn : null),
-    h('p', { class: 'muted' }, logged
-      ? `${state.base.length} en mi-app + ${state.extras.length} añadidos · nube leída: ${when(state.extrasAt)}`
-      : `${state.base.length} en mi-app · inicia sesión en Ajustes para ver también los añadidos desde la app`));
-  const val = state.discogsValue;
-  if (val) root.append(h('div', { class: 'card' }, h('h3', null, 'Valor en Discogs'),
-    h('div', { class: 'stat' }, h('span', null, 'Mediana'), h('b', { class: 'big' }, val.median)),
-    h('div', { class: 'stat' }, h('span', null, 'Mínimo – máximo'), h('span', null, `${val.minimum} – ${val.maximum}`))));
-  else if (prefs.get('discogs.token') && prefs.get('discogs.user')) {
-    root.append(h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: loadValue }, 'Calcular valor de mi colección (Discogs)')));
-  }
+      fb.isOwner() ? h('button', { class: 'btn sec', onclick: openAdd }, '+ Añadir disco') : null));
   const wall = h('div'), counter = h('div', { class: 'counter' });
   const paint = () => {
     const items = C.filterWall(state.collection, state.search, state.tag);
@@ -223,6 +230,7 @@ function vCollection() {
   sel.addEventListener('change', () => { state.tag = sel.value; paint(); });
   root.append(wall, counter);
   paint();
+  queueMicrotask(updateSyncUi);
   return root;
 }
 
@@ -312,21 +320,20 @@ function openAdd() {
     h('div', { class: 'btns' }, save, h('button', { class: 'btn sec', onclick: closeSheet }, 'Cancelar')));
 }
 
-async function syncExtras() {
+// Vuelve a leer el CSV de mi-app y, con sesión, los discos añadidos en la nube
+async function syncAll() {
+  if (state.syncing) return;
+  state.syncing = true; state.syncError = ''; updateSyncUi();
   try {
-    setStatus('Sincronizando…');
-    const r = await fb.readExtras({ force: true });
-    state.extras = r.albums; state.extrasAt = r.at; rebuildCollection(); render();
-    toast(`Colección sincronizada: ${state.extras.length} discos añadidos desde la app`);
-  } catch (e) { toast(e.message, true); render(); }
+    state.base = await collection.loadBase({ force: true });
+    state.csvAt = await collection.csvAt();
+    if (fb.isLoggedIn()) { const r = await fb.readExtras({ force: true }); state.extras = r.albums; state.extrasAt = r.at; }
+    rebuildCollection();
+    toast('Colección sincronizada');
+  } catch (e) { state.syncError = e.message; toast(e.message, true); }
+  finally { state.syncing = false; if (state.tab === 'coleccion' || state.tab === 'ajustes') render(); else updateSyncUi(); }
 }
-
-async function loadValue() {
-  try {
-    state.discogsValue = await discogs.collectionValue(prefs.get('discogs.user'));
-    render();
-  } catch (e) { toast(e.message, true); }
-}
+const syncExtras = syncAll;
 
 // ---------- Comprar ----------
 let cancelLookup = false;
@@ -502,7 +509,7 @@ function vSettings() {
   const du = h('input', { type: 'text', value: prefs.get('discogs.user'), autocapitalize: 'none', placeholder: 'usuario de Discogs' });
   const dt = h('input', { type: 'password', value: prefs.get('discogs.token'), autocomplete: 'off', placeholder: 'token personal' });
   root.append(h('div', { class: 'card' }, h('h3', null, 'Discogs'),
-    h('p', { class: 'muted' }, 'discogs.com/settings/developers → Generate new token. Con token las consultas son más rápidas y puedes ver el valor de tu colección. Se guarda solo en este dispositivo.'),
+    h('p', { class: 'muted' }, 'discogs.com/settings/developers → Generate new token. Con token las consultas son más rápidas. Se guarda solo en este dispositivo.'),
     field('Usuario', du), field('Token', dt),
     h('button', { class: 'btn', onclick: () => { prefs.set('discogs.user', du.value.trim()); prefs.set('discogs.token', dt.value.trim()); toast('Guardado'); } }, 'Guardar')));
 
@@ -570,7 +577,8 @@ async function boot() {
       toast('Spotify conectado'); await refreshApi();
     } catch (e) { showLanding(full, e.message); }
   } else if (fb.isLoggedIn()) {
-    fb.readExtras().then(r => { if (!r.fromCache) { state.extras = r.albums; state.extrasAt = r.at; rebuildCollection(); render(); } }).catch(() => {});
+    fb.readExtras().then(r => { if (!r.fromCache) { state.extras = r.albums; state.extrasAt = r.at; rebuildCollection(); render(); } })
+      .catch(e => { state.syncError = e.message; updateSyncUi(); });
   }
 }
 

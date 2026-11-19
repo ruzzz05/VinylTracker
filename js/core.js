@@ -288,3 +288,28 @@ export function filterWall(list, query, tag) {
     .filter(a => (!q || fold(a.artist).includes(q) || fold(a.name).includes(q)) && (!tag || (a.tags || []).includes(tag)))
     .sort((x, y) => fold(x.artist).localeCompare(fold(y.artist), 'es') || fold(x.name).localeCompare(fold(y.name), 'es'));
 }
+
+// ---------- Estado de sincronización (mismas reglas y textos que mi-app) ----------
+// "hace 5 min", "hace 2 h", "hace 3 días". Vacío si no hay hora; una hora futura cuenta como ahora.
+export function relativeTime(ts, now) {
+  if (!Number.isFinite(ts) || ts <= 0) return '';
+  const diff = Math.max(0, now - ts);
+  const MIN = 60000, HOUR = 60 * MIN, DAY = 24 * HOUR;
+  if (diff < MIN) return 'hace un momento';
+  if (diff < HOUR) return 'hace ' + Math.floor(diff / MIN) + ' min';
+  if (diff < DAY) return 'hace ' + Math.floor(diff / HOUR) + ' h';
+  const days = Math.floor(diff / DAY);
+  return 'hace ' + days + (days === 1 ? ' día' : ' días');
+}
+
+// Prioridad: sin conexión, sincronizando, error, cambios sin subir, sincronizado, sin sincronizar todavía.
+export function syncStatus({ online = true, syncing = false, error = '', dirty = false, lastSyncAt = 0, now = Date.now() } = {}) {
+  const last = relativeTime(lastSyncAt, now);
+  const lastText = last ? 'Última sincronización: ' + last : 'Todavía no se ha sincronizado en este dispositivo.';
+  if (!online) return { state: 'offline', label: 'Sin conexión', detail: dirty ? 'Tienes cambios sin subir; se subirán solos cuando vuelva la conexión. ' + lastText : 'No hay conexión. ' + lastText };
+  if (syncing) return { state: 'syncing', label: 'Sincronizando…', detail: 'Comprobando tus datos.' };
+  if (error) return { state: 'error', label: 'Error al sincronizar', detail: error + ' ' + lastText };
+  if (dirty) return { state: 'pending', label: 'Cambios sin subir', detail: 'Se subirán en unos segundos. ' + lastText };
+  if (last) return { state: 'ok', label: 'Sincronizado', detail: lastText };
+  return { state: 'unknown', label: 'Sin sincronizar todavía', detail: lastText };
+}

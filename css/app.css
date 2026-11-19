@@ -126,7 +126,25 @@ label { font-size: .82rem; color: var(--muted); }
 .toast.err { border-left: 4px solid var(--bad); }
 
 /* Colección: pared de portadas como en mi-app (3 por fila) */
-.controls { display: grid; gap: 8px; grid-template-columns: 1fr; margin-bottom: 4px; }
+.filters { display: flex; gap: 6px; align-items: center; }
+.filters select { flex: 1; min-width: 0; margin: 4px 0 8px; }
+.syncgroup { display: flex; align-items: center; flex: none; margin-bottom: 4px; }
+.actions { display: flex; gap: 8px; margin: 0 0 8px; }
+.actions .btn { flex: 1; }
+.iconbtn { width: 44px; height: 44px; border-radius: 12px; border: 0; background: var(--surface2); color: var(--text); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.iconbtn svg { width: 22px; height: 22px; }
+.iconbtn.spin svg { animation: vt-spin 1s linear infinite; }
+@keyframes vt-spin { to { transform: rotate(360deg); } }
+/* Punto de sincronización: mismos colores que en mi-app */
+.sync-dot { appearance: none; width: 28px; height: 44px; display: grid; place-items: center; border: 0; background: transparent; cursor: pointer; padding: 0; }
+.sync-dot::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #8a8d91; box-shadow: 0 0 0 2px color-mix(in srgb, var(--text) 12%, transparent); }
+.sync-dot[data-state="ok"]::before { background: #2e9d5b; }
+.sync-dot[data-state="pending"]::before { background: #e0a100; }
+.sync-dot[data-state="offline"]::before { background: #8a8d91; }
+.sync-dot[data-state="error"]::before { background: #d64545; }
+.sync-dot[data-state="unknown"]::before { background: transparent; box-shadow: inset 0 0 0 2px #8a8d91; }
+.sync-dot[data-state="syncing"]::before { background: #3b82f6; animation: vt-pulse 1s ease-in-out infinite; }
+@keyframes vt-pulse { 50% { opacity: .35; } }
 .wall { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
 .tile { position: relative; display: block; aspect-ratio: 1; overflow: hidden; border-radius: 12px; background: var(--surface2); color: #fff; text-decoration: none; padding: 0; border: 0; cursor: pointer; font: inherit; text-align: left; }
 .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }

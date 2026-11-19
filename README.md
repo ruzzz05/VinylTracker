@@ -24,7 +24,7 @@ cuáles te faltan, **cuánto cuestan** y **dónde hay stock** (o preventa).
 | **Cuenta de mi-app** | Usuario y contraseña de tu app Vinilos. La contraseña no se guarda. |
 | **Spotify (API)** | Crea una app en <https://developer.spotify.com/dashboard>, añade el redirect URI que muestra Ajustes (`https://ruzzz05.github.io/VinylTracker/`), pon su *Client ID* y pulsa **Conectar Spotify**. Login PKCE, sin secreto. |
 | **Historial de Spotify** | spotify.com/account/privacy → *Historial de reproducciones ampliado*. Importa el `.zip` tal cual. Se procesa en el móvil. |
-| **Discogs** | <https://www.discogs.com/settings/developers> → *Generate new token*. Con token: más rápido y valor de tu colección. |
+| **Discogs** | <https://www.discogs.com/settings/developers> → *Generate new token*. Con token: más rápido. |
 
 ## Privacidad
 - Los tokens, el historial y los precios se guardan **solo en tu dispositivo** (IndexedDB / localStorage). No hay servidor propio.
