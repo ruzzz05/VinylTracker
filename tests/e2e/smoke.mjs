@@ -1,0 +1,122 @@
+// Prueba de humo en un iPhone virtual, con Spotify/Discogs/Firebase simulados.
+// Requiere Playwright y `python tools/build_site.py`.  Uso: node tests/e2e/smoke.mjs [carpeta-capturas]
+import { createRequire } from 'node:module';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+
+const require = createRequire(import.meta.url);
+const { chromium, devices } = require('playwright');
+const ROOT = path.resolve(new URL('../..', import.meta.url).pathname);
+const SHOTS = process.argv[2] || path.join(ROOT, '_shots');
+mkdirSync(SHOTS, { recursive: true });
+
+const server = spawn('python3', ['-m', 'http.server', '8765', '--bind', '127.0.0.1', '-d', path.join(ROOT, '_site')], { stdio: 'ignore' });
+process.on('exit', () => server.kill());
+await new Promise(r => setTimeout(r, 800));
+const BASE = 'http://127.0.0.1:8765/';
+
+const CSV = 'Artist,Name,Image,Tags,Url\nAbhir, ULTRASWAN,,r&b, https://open.spotify.com/album/2Gzdlis2gby7peCvJ0Poif?si=x\nRosalía,Motomami,,pop,\n';
+const entry = (artist, album, n, month = '2026-10') => Array.from({ length: n }, (_, i) => ({
+  ts: `${month}-${String(1 + (i % 27)).padStart(2, '0')}T12:00:00Z`, ms_played: 200000, master_metadata_track_name: 't' + (i % 5),
+  master_metadata_album_artist_name: artist, master_metadata_album_album_name: album, spotify_track_uri: 'spotify:track:' + album + (i % 5) }));
+const HISTORY = [...entry('Nirvana', 'Nevermind', 40), ...entry('Delta Goodrem', 'Pure', 25), ...entry('Abhir', 'ULTRASWAN', 20),
+  ...entry('Rosalía', 'Motomami (Deluxe)', 15), ...entry('Radiohead', 'OK Computer', 12), ...entry('Viejo', 'Antiguo', 30, '2024-01')];
+writeFileSync(path.join(SHOTS, 'history.json'), JSON.stringify(HISTORY));
+
+const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
+let discogsCalls = 0;
+
+const browser = await chromium.launch();
+const ctx = await browser.newContext({ ...devices['iPhone 14'], locale: 'es-ES' });
+const page = await ctx.newPage();
+page.setDefaultTimeout(20000);
+const errors = [];
+page.on('pageerror', e => errors.push(e.message));
+page.on('console', m => { if (m.type() === 'error') console.log('console.error:', m.text()); });
+
+await ctx.route('https://ruzzz05.github.io/mi-app/apps/vinilos/musica.csv', r => r.fulfill({ status: 200, contentType: 'text/csv', headers: { 'access-control-allow-origin': '*' }, body: CSV }));
+await ctx.route('https://identitytoolkit.googleapis.com/**', r => json(r, { idToken: 'tok', refreshToken: 'ref', localId: 'uid', expiresIn: '3600' }));
+await ctx.route('https://firestore.googleapis.com/**', r => json(r, { fields: { updatedAt: { integerValue: '1' },
+  json: { stringValue: JSON.stringify({ albums: [{ id: 'abc', artist: 'Radiohead', name: 'OK Computer', image: '', tags: [], url: '' }] }) } } }));
+await ctx.route('https://api.discogs.com/**', r => {
+  discogsCalls++;
+  const u = decodeURIComponent(r.request().url()).replace(/\+/g, ' ');
+  if (u.includes('/database/search')) {
+    const all = [{ id: 111, title: 'Nirvana - Nevermind', community: { have: 900, want: 50 } },
+      { id: 222, title: 'Delta Goodrem - Pure', community: { have: 3, want: 1 } }];
+    return json(r, { results: all.filter(x => u.includes('artist=' + x.title.split(' - ')[0])) });
+  }
+  if (u.includes('/marketplace/stats/')) return json(r, { lowest_price: { currency: 'EUR', value: 19 }, num_for_sale: 36 });
+  return json(r, { minimum: '€1', median: '€2', maximum: '€3' });
+});
+await ctx.route('https://i.scdn.co/**', r => r.abort());
+await ctx.route('https://accounts.spotify.com/authorize**', r => {
+  const u = new URL(r.request().url());
+  r.fulfill({ status: 302, headers: { location: `${BASE}?code=CODE&state=${u.searchParams.get('state')}` } });
+});
+await ctx.route('https://accounts.spotify.com/api/token', r => json(r, { access_token: 'a', refresh_token: 'r', expires_in: 3600 }));
+await ctx.route('https://api.spotify.com/v1/**', r => {
+  const u = r.request().url();
+  const alb = (id, name, artist) => ({ id, name, artists: [{ name: artist }], images: [], album_type: 'album', total_tracks: 10 });
+  if (u.includes('/me/top/tracks')) return json(r, { items: [{ album: alb('s1', 'La Deriva', 'Vetusta Morla') }, { album: alb('s2', 'Nevermind', 'Nirvana') }] });
+  if (u.includes('recently-played')) return json(r, { items: [] });
+  return json(r, { items: [{ album: alb('s3', 'Guardado', 'Alguien') }], next: null });
+});
+
+await page.goto(BASE);
+await page.waitForSelector('.empty');
+await page.screenshot({ path: path.join(SHOTS, '1-vacio.png') });
+
+// Ajustes: login de mi-app
+await page.click('[data-tab=ajustes]');
+await page.fill('input[autocomplete=username]', 'ruzz05');
+await page.fill('input[type=password][autocomplete=current-password]', 'secreto');
+await page.click('text=Iniciar sesión');
+await page.waitForSelector('text=Sesión iniciada como');
+assert.equal(await page.evaluate(() => localStorage.getItem('vt.fb.refresh')), 'ref');
+assert.ok(!(await page.evaluate(() => JSON.stringify(localStorage))).includes('secreto'), 'la contraseña no debe guardarse');
+
+// Importar historial (.json)
+await page.setInputFiles('input[type=file]', path.join(SHOTS, 'history.json'));
+await page.click('text=Importar');
+await page.waitForSelector('.row');
+const rows = await page.$$eval('.row .t b', els => els.map(e => e.textContent));
+assert.equal(rows[0], 'Nevermind');
+await page.screenshot({ path: path.join(SHOTS, '2-ranking.png') });
+const owned = await page.$$eval('.row .own', els => els.length);
+assert.ok(owned >= 3, 'ULTRASWAN (csv, por id), Motomami (csv, por nombre) y OK Computer (nube): ' + owned);
+await page.click('.seg >> text=Todo');
+assert.ok((await page.$$('.row')).length >= 5);
+
+// Comprar: ofertas de tienda (datos locales) + Discogs simulado
+await page.click('[data-tab=comprar]');
+await page.waitForSelector('.card .big');
+await page.screenshot({ path: path.join(SHOTS, '3-comprar-antes.png') });
+await page.click('text=Buscar precios en Discogs');
+await page.waitForFunction(() => !document.querySelector('.bar'), null, { timeout: 60000 });
+assert.ok(discogsCalls > 0);
+await page.screenshot({ path: path.join(SHOTS, '4-comprar.png') });
+await page.click('.row >> nth=0');
+await page.waitForSelector('.sheet .panel');
+await page.screenshot({ path: path.join(SHOTS, '5-ficha.png') });
+await page.click('.sheet >> text=Cerrar');
+
+// Colección: 2 del CSV + 1 de la nube
+await page.click('[data-tab=coleccion]');
+await page.waitForSelector('.grid .cell');
+assert.equal((await page.$$('.grid .cell')).length, 3);
+await page.screenshot({ path: path.join(SHOTS, '6-coleccion.png') });
+
+// Spotify: login PKCE simulado
+await page.click('[data-tab=ajustes]');
+await page.click('text=Conectar Spotify');
+await page.waitForFunction(() => localStorage.getItem('vt.spotify.token'), null, { timeout: 15000 });
+await page.waitForSelector('.row');
+await page.screenshot({ path: path.join(SHOTS, '7-tras-spotify.png') });
+
+assert.deepEqual(errors, []);
+console.log('OK: flujo completo, capturas en', SHOTS);
+await browser.close();
+server.kill();

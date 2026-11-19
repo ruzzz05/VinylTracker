@@ -2,6 +2,13 @@ __pycache__/
 *.pyc
 .env
 out/
+_site/
 .cache/
-data/
+data/stores.json
+# Datos personales y credenciales: nunca al repositorio (es público)
 *.zip
+!tests/spotify-sample.zip
+Streaming_History*
+my_spotify_data*
+.DS_Store
+node_modules/
