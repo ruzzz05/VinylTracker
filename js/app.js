@@ -8,10 +8,11 @@ import * as fb from './firebase.js';
 import * as collection from './collection.js';
 import { readSpotifyZip } from './zip.js';
 import { h, safeUrl } from './dom.js';
-import { buildStats } from './stats.js';
+import { buildStats, mergeStats } from './stats.js';
+import * as L from './live.js';
 import { artistsView, tracksView, statsView } from './statsview.js';
 
-const VERSION = '1.3.1';
+const VERSION = '1.4.0';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -64,18 +65,32 @@ const state = {
   base: [], extras: [], extrasAt: 0, owned: null, collection: [],
   storeIndex: [], storeDate: '',
   stats: null, rankView: prefs.get('rankView', 'albums'),
+  live: L.emptyLive(), liveStats: null, liveHistory: {}, effStats: null, effHistory: {},
+  now: undefined, nowError: '', liveBusy: false, liveError: '',
   csvAt: 0, syncing: false, syncError: '',
   prices: new Map(),          // key -> { discogs }
   filter: 'todos', search: '', busy: ''
 };
 
-const rankingList = () => C.buildRanking({ history: state.history, api: state.apiAlbums, months: state.months })
+// Lo que ven las pantallas es lo importado MÁS lo recogido en vivo
+function recompute() {
+  const entries = L.toEntries(state.live);
+  state.liveStats = entries.length ? buildStats(entries) : null;
+  state.liveHistory = entries.length ? C.aggregateHistory(entries, {}).into : {};
+  state.effStats = mergeStats(state.stats, state.liveStats);
+  state.effHistory = C.mergeHistory(state.history, state.liveHistory);
+}
+
+const rankingList = () => C.buildRanking({ history: state.effHistory, api: state.apiAlbums, months: state.months })
   .map(r => ({ ...r, owned: C.isOwned(r, state.owned), offers: C.matchStores(r, state.storeIndex) }));
 
 async function loadAll() {
   state.history = await store.get('history', {});
   state.historyInfo = await store.get('historyInfo', null);
   state.stats = await store.get('stats', null);
+  const lv = await store.get('live', null);
+  if (lv) state.live = { ...L.emptyLive(), ...lv };
+  recompute();
   const api = await store.get('api', null);
   if (api) { state.apiAlbums = api.albums; state.apiAt = api.at; }
   try { state.base = await collection.loadBase(); } catch (e) { toast('No se pudo leer tu colección de mi-app: ' + e.message, true); }
@@ -155,24 +170,24 @@ function rankTabs() {
 
 function vRanking() {
   const root = h('div');
-  const hasHistory = Object.keys(state.history).length > 0;
+  const hasHistory = Object.keys(state.effHistory).length > 0;
   const hasApi = Object.keys(state.apiAlbums).length > 0;
-  if (!hasHistory && !hasApi && !state.stats) {
+  if (!hasHistory && !hasApi && !state.effStats) {
     root.append(h('div', { class: 'empty' },
       h('p', null, 'Todavía no hay datos de escucha.'),
       h('p', { class: 'muted' }, 'Conecta Spotify o importa tu historial (export de datos) en Ajustes.'),
       h('div', { class: 'btns', style: 'justify-content:center' }, h('button', { class: 'btn', onclick: () => go('ajustes') }, 'Ir a Ajustes'))));
     return root;
   }
-  root.append(rankTabs());
+  root.append(...[liveBar(), nowCard(), rankTabs()].filter(Boolean));
   const view = state.rankView;
   const goSettings = () => go('ajustes');
   // El periodo vale para todas las vistas que usan el historial
-  if (hasHistory || state.stats) root.append(periodBar());
-  if (view === 'artists') { root.append(artistsView({ stats: state.stats, apiAlbums: state.apiAlbums, months: state.months, onImport: goSettings })); return root; }
-  if (view === 'tracks') { root.append(tracksView({ stats: state.stats, months: state.months, onImport: goSettings })); return root; }
+  if (hasHistory || state.effStats) root.append(periodBar());
+  if (view === 'artists') { root.append(artistsView({ stats: state.effStats, apiAlbums: state.apiAlbums, months: state.months, onImport: goSettings })); return root; }
+  if (view === 'tracks') { root.append(tracksView({ stats: state.effStats, months: state.months, onImport: goSettings })); return root; }
   if (view === 'stats') {
-    root.append(statsView({ stats: state.stats, history: state.history, collection: state.collection, ranking: rankingList().slice(0, 40),
+    root.append(statsView({ stats: state.effStats, history: state.effHistory, collection: state.collection, ranking: rankingList().slice(0, 40),
       months: state.months, onImport: goSettings }));
     return root;
   }
@@ -189,6 +204,91 @@ function vRanking() {
   if (!list.length) root.append(h('div', { class: 'empty' }, 'No hay reproducciones en este periodo.'));
   else root.append(h('ul', { class: 'list' }, list.map(albumRow)));
   return root;
+}
+
+// ---------- En vivo: lo que escuchas ahora y lo que acabas de escuchar ----------
+const liveStatus = () => C.syncStatus({ online: navigator.onLine !== false, syncing: state.liveBusy, error: state.liveError, lastSyncAt: state.live.at, now: Date.now() });
+const liveText = () => (!spotify.isConnected() ? 'Spotify sin conectar' : state.liveBusy ? 'Actualizando…' : state.liveError ? 'Error al actualizar'
+  : state.live.at ? `En vivo · ${C.relativeTime(state.live.at, Date.now())}` : 'En vivo · todavía sin datos');
+
+function updateLiveUi() {
+  const dot = $('#live-dot'), btn = $('#live-refresh'), txt = $('#live-text');
+  if (dot) { const st = liveStatus(); dot.dataset.state = st.state; dot.title = st.label; dot.setAttribute('aria-label', 'En vivo: ' + st.label); }
+  if (btn) { btn.classList.toggle('spin', state.liveBusy); btn.disabled = state.liveBusy; }
+  if (txt) txt.textContent = liveText();
+  const bar = $('#now-bar');
+  if (bar && state.now && state.now.duration) bar.style.width = Math.min(100, state.now.progress / state.now.duration * 100) + '%';
+}
+window.addEventListener('online', updateLiveUi);
+
+function liveBar() {
+  if (!spotify.isConnected()) {
+    return h('div', { class: 'livebar' }, h('span', { class: 'muted' }, 'Conecta Spotify para ver lo que escuchas en vivo'),
+      h('button', { class: 'btn sec sm', onclick: () => go('ajustes') }, 'Conectar'));
+  }
+  const dot = h('button', { class: 'sync-dot', id: 'live-dot', type: 'button', onclick: () => {
+    const st = liveStatus();
+    toast(`${st.label}. ${st.detail}` + (state.live.gap ? ' Posible hueco: escuchaste más de 50 canciones desde la última vez.' : ''), st.state === 'error');
+  } });
+  const btn = h('button', { class: 'iconbtn sm', id: 'live-refresh', type: 'button', 'aria-label': 'Actualizar ahora', title: 'Actualizar ahora',
+    onclick: () => { liveRefresh(); nowRefresh(); } }, icon(SYNC_ICON));
+  queueMicrotask(updateLiveUi);
+  return h('div', { class: 'livebar' }, dot, h('span', { id: 'live-text', class: 'muted' }, liveText()), btn);
+}
+
+function nowCard() {
+  const n = state.now;
+  if (!n) return state.nowError ? h('div', { class: 'card' }, h('p', { class: 'muted' }, state.nowError), h('button', { class: 'btn sec sm', onclick: () => go('ajustes') }, 'Ir a Ajustes')) : null;
+  const album = { key: C.albumKey(n.artist, n.album), artist: n.artist, name: n.album, id: n.albumId, image: n.image };
+  album.owned = C.isOwned(album, state.owned);
+  album.offers = C.matchStores(album, state.storeIndex);
+  const pct = n.duration ? Math.min(100, n.progress / n.duration * 100) : 0;
+  return h('button', { class: 'nowcard', onclick: () => openSheet(album) }, coverEl(album),
+    h('div', { class: 't' }, h('span', { class: 'nowlbl' }, n.playing ? '♪ Suena ahora' : '⏸ En pausa'), h('b', null, n.title), h('span', null, `${n.artist} · ${n.album}`),
+      album.owned ? h('span', { class: 'own' }, '✓ En tu colección') : h('span', { class: 'chip' }, 'No lo tienes en vinilo'),
+      h('div', { class: 'bar' }, h('i', { id: 'now-bar', style: `width:${pct}%` }))));
+}
+
+// Recoge lo último que has escuchado y lo suma al registro (se guarda en el móvil)
+async function liveRefresh() {
+  if (!spotify.isConnected() || state.liveBusy) return;
+  state.liveBusy = true; updateLiveUi();
+  try {
+    const incoming = await spotify.fetchRecent(state.live.cursor || 0);
+    const { live, fresh } = L.mergeLive(state.live, incoming, state.stats ? state.stats.total.lastTs : 0);
+    state.live = { ...live, at: Date.now() };
+    state.liveError = '';
+    await store.set('live', state.live);
+    if (fresh.length) { recompute(); if (state.tab === 'ranking') render(); }
+  } catch (e) { state.liveError = e.message; }
+  finally { state.liveBusy = false; updateLiveUi(); }
+}
+
+async function nowRefresh() {
+  if (!spotify.isConnected()) { state.now = undefined; return; }
+  try {
+    const prev = state.now, n = await spotify.fetchNowPlaying();
+    state.now = n; state.nowError = '';
+    const changed = (prev && prev.uri) !== (n && n.uri) || (prev && prev.playing) !== (n && n.playing);
+    if (state.tab === 'ranking') { if (changed) render(); else updateLiveUi(); }
+  } catch (e) {
+    state.now = null; state.nowError = e.code === 'scope' ? e.message : '';
+    if (state.tab === 'ranking') render();
+  }
+}
+
+// Mientras la app está abierta: lo que suena cada 15 s y las últimas canciones cada minuto; también al volver a ella
+let liveTick = 0;
+function startLive() {
+  const run = () => {
+    if (document.visibilityState !== 'visible' || !spotify.isConnected()) return;
+    nowRefresh();
+    if (liveTick++ % 4 === 0) liveRefresh();
+  };
+  setInterval(run, 15000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { liveTick = 0; run(); } });
+  window.addEventListener('online', run);
+  run();
 }
 
 // ---------- Colección (como la app Vinilos de mi-app) ----------
@@ -479,6 +579,9 @@ function vSettings() {
   const paste = h('input', { type: 'url', placeholder: 'https://…/?code=…&state=…', autocapitalize: 'none' });
   root.append(h('div', { class: 'card' }, h('h3', null, 'Spotify'),
     spotify.isConnected() ? h('p', { class: 'own' }, '✓ Conectado · última carga: ' + when(state.apiAt)) : h('p', { class: 'muted' }, 'Sin conectar.'),
+    spotify.isConnected() ? h('p', { class: 'muted' }, `En vivo: ${state.live.entries.length} reproducciones guardadas` +
+      (state.live.entries.length ? ` desde ${when(Date.parse(state.live.entries[0].ts))}` : '') +
+      '. Se actualiza sola cada minuto mientras la app está abierta. Spotify solo recuerda tus últimas 50 canciones: abre la app de vez en cuando para no perder ninguna.') : null,
     field('Client ID (app de developer.spotify.com)', cid),
     h('p', { class: 'muted' }, 'Redirect URI que debes tener añadida en tu app de Spotify:'),
     h('code', { style: 'word-break:break-all;font-size:.8rem;user-select:text;-webkit-user-select:text' }, spotify.redirectUri()),
@@ -490,7 +593,11 @@ function vSettings() {
       h('button', { class: 'btn', onclick: async () => { prefs.set('spotify.client', cid.value.trim()); await spotify.startLogin(); } },
         spotify.isConnected() ? 'Reconectar' : 'Conectar Spotify'),
       spotify.isConnected() ? h('button', { class: 'btn sec', onclick: refreshApi }, 'Actualizar datos') : null,
-      spotify.isConnected() ? h('button', { class: 'btn danger', onclick: () => { spotify.disconnect(); render(); } }, 'Desconectar') : null),
+      spotify.isConnected() ? h('button', { class: 'btn danger', onclick: () => { spotify.disconnect(); state.now = undefined; render(); } }, 'Desconectar') : null,
+      state.live.entries.length ? h('button', { class: 'btn danger', onclick: async () => {
+        if (!confirm('¿Borrar el registro en vivo guardado en este dispositivo?')) return;
+        state.live = L.emptyLive(); await store.set('live', state.live); recompute(); render();
+      } }, 'Borrar registro en vivo') : null),
     h('details', null, h('summary', { class: 'muted' }, 'Si Spotify se queda en bucle y no me deja aceptar'),
       h('p', { class: 'muted' }, 'En la app instalada, el login de Spotify a veces no guarda la sesión. Hazlo en Safari: 1) pulsa el botón y copia el enlace; 2) abre Safari (no la app), pega el enlace y entra con tu cuenta; 3) acepta; 4) copia la dirección a la que te lleve y pégala abajo, en "Si al volver…".'),
       (() => {
@@ -518,7 +625,7 @@ function vSettings() {
     h('p', { class: 'muted' }, 'spotify.com/account/privacy → "Historial de reproducciones ampliado". Importa el .zip tal cual (o todos los .json a la vez; una nueva importación sustituye a la anterior). Sirven los dos paquetes: el ampliado (con álbumes, tarda más) y el básico "Datos de la cuenta" (último año, sin álbumes, llega antes). Se procesa en tu móvil, no se sube a ningún sitio.'),
     info ? h('p', null, `${info.basic ? 'paquete básico (sin álbumes)' : info.albums + ' álbumes'} · ${info.plays} reproducciones · ${info.from} → ${info.to}`) : null,
     file, h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => importHistory(file.files) }, 'Importar'),
-      info ? h('button', { class: 'btn danger', onclick: async () => { await store.del('history'); await store.del('historyInfo'); await store.del('stats'); state.history = {}; state.historyInfo = null; state.stats = null; render(); } }, 'Borrar historial') : null)));
+      info ? h('button', { class: 'btn danger', onclick: async () => { await store.del('history'); await store.del('historyInfo'); await store.del('stats'); state.history = {}; state.historyInfo = null; state.stats = null; recompute(); render(); } }, 'Borrar historial') : null)));
 
   // Discogs
   const du = h('input', { type: 'text', value: prefs.get('discogs.user'), autocapitalize: 'none', placeholder: 'usuario de Discogs' });
@@ -565,6 +672,7 @@ async function importHistory(files) {
     const info = { albums: Object.keys(into).length, plays: stats.total.plays, from: stats.total.first, to: stats.total.last, skipped, basic: !Object.keys(into).length };
     await store.set('history', into); await store.set('historyInfo', info); await store.set('stats', stats);
     state.history = into; state.historyInfo = info; state.stats = stats;
+    state.live = L.pruneLive(state.live, stats.total.lastTs); await store.set('live', state.live); recompute();
     toast(info.basic ? `Importado: ${S_fmt(stats.total.plays)} reproducciones (sin álbumes: es el paquete básico)` : `Historial importado: ${info.albums} álbumes`);
     if (info.basic && state.rankView === 'albums') { state.rankView = 'stats'; prefs.set('rankView', 'stats'); }
     go('ranking');
@@ -579,6 +687,7 @@ async function refreshApi() {
     await store.set('api', { at: state.apiAt, albums });
     toast(`Spotify: ${Object.keys(albums).length} álbumes`);
     go('ranking');
+    liveRefresh(); nowRefresh();
   } catch (e) { toast(e.message, true); setStatus(''); }
 }
 
@@ -588,6 +697,7 @@ async function boot() {
   await loadAll();
   markTab();
   render();
+  startLive();
   // Vuelta del login de Spotify: ?code=…&state=…
   const qs = new URLSearchParams(location.search);
   if (qs.has('code') || qs.has('error')) {

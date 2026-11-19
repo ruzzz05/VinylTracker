@@ -236,3 +236,18 @@ details.dt { margin-top: 8px; font-size: .8rem; }
 details.dt summary { color: var(--muted); cursor: pointer; }
 details.dt table { width: 100%; border-collapse: collapse; margin-top: 6px; }
 details.dt th, details.dt td { text-align: left; padding: 3px 4px; border-bottom: 1px solid var(--viz-line); font-weight: 400; }
+
+/* En vivo */
+.livebar { display: flex; align-items: center; gap: 6px; margin: 2px 0 8px; }
+.livebar .muted { flex: 1; font-size: .82rem; }
+.iconbtn.sm { width: 36px; height: 36px; border-radius: 10px; }
+.iconbtn.sm svg { width: 18px; height: 18px; }
+.btn.sm { padding: 6px 12px; font-size: .85rem; border-radius: 10px; }
+.nowcard { display: grid; grid-template-columns: 64px 1fr; gap: 12px; align-items: center; width: 100%; text-align: left; background: var(--surface); border: 0; border-radius: 16px; padding: 10px; margin: 0 0 10px; color: inherit; font: inherit; cursor: pointer; }
+.nowcard .cover { width: 64px; height: 64px; }
+.nowcard .t { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.nowcard .t b, .nowcard .t > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nowcard .t > span { color: var(--muted); font-size: .85rem; }
+.nowcard .nowlbl { color: var(--viz); font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.nowcard .own, .nowcard .chip { align-self: flex-start; }
+.nowcard .bar { margin: 6px 0 0; height: 4px; }

@@ -38,12 +38,12 @@ export function buildStats(entries) {
     const end = new Date(e.ts);
     if (isNaN(end)) continue;
     rows.push({ end, ms: Math.max(0, e.ms_played || 0), artist, name, album: e.master_metadata_album_album_name || '',
-      skipped: e.skipped === true, shuffle: e.shuffle === true, platform: platformName(e.platform) });
+      skipped: e.skipped === true, shuffle: e.shuffle === true, platform: e.platform ? platformName(e.platform) : '' });
   }
   rows.sort((a, b) => a.end - b.end);
 
   const S = { v: STATS_VERSION, days: {}, heat: new Array(168).fill(0), months: {}, artists: {}, tracks: {}, platforms: {},
-    repeats: [], sessions: [], total: { ms: 0, plays: 0, rows: 0, first: '', last: '' } };
+    repeats: [], sessions: [], total: { ms: 0, plays: 0, rows: 0, first: '', last: '', lastTs: 0 } };
   const perDayTrack = new Map();
   let ses = null;
 
@@ -54,10 +54,10 @@ export function buildStats(entries) {
     S.heat[((r.end.getDay() + 6) % 7) * 24 + r.end.getHours()] += r.ms;
     const m = S.months[month] || (S.months[month] = { ms: 0, plays: 0, rows: 0, skipped: 0, shuffle: 0 });
     m.ms += r.ms; m.rows++; if (counted) m.plays++; if (r.skipped) m.skipped++; if (r.shuffle) m.shuffle++;
-    S.platforms[r.platform] = (S.platforms[r.platform] || 0) + r.ms;
+    if (r.platform) S.platforms[r.platform] = (S.platforms[r.platform] || 0) + r.ms;     // el registro en vivo y el export básico no traen plataforma
     S.total.ms += r.ms; S.total.rows++; if (counted) S.total.plays++;
     if (!S.total.first) S.total.first = day;
-    S.total.last = day;
+    S.total.last = day; S.total.lastTs = r.end.getTime();
 
     const a = S.artists[r.artist] || (S.artists[r.artist] = { ms: 0, plays: 0, first: day, months: {} });
     a.ms += r.ms; if (counted) a.plays++;
@@ -277,3 +277,39 @@ export function niceCeil(v) {
   return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
 }
 export const fmtAxis = ms => { const m = ms / 60000; return m < 120 ? `${Math.round(m)} min` : `${Math.round(m / 60)} h`; };
+
+// ------------------------------------------------------------------------- fusionar resúmenes
+// Une el historial importado con el registro en vivo sin recalcular todo (equivale a buildStats de la unión).
+// Las sesiones y las repeticiones de un solo día se unen de forma aproximada.
+export function mergeStats(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const out = { v: a.v, days: { ...a.days }, heat: a.heat.map((v, i) => v + b.heat[i]), months: { ...a.months },
+    artists: { ...a.artists }, tracks: { ...a.tracks }, platforms: { ...a.platforms }, total: { ...a.total } };
+  for (const [d, v] of Object.entries(b.days)) out.days[d] = (out.days[d] || 0) + v;
+  for (const [m, c] of Object.entries(b.months)) {
+    const o = out.months[m];
+    out.months[m] = o ? { ms: o.ms + c.ms, plays: o.plays + c.plays, rows: o.rows + c.rows, skipped: o.skipped + c.skipped, shuffle: o.shuffle + c.shuffle } : { ...c };
+  }
+  const mergeEntity = (map, key, e) => {
+    const o = map[key];
+    if (!o) { map[key] = e; return; }
+    const n = { ...o, ms: o.ms + e.ms, plays: o.plays + e.plays, months: { ...o.months } };
+    if (e.first && (!o.first || e.first < o.first)) n.first = e.first;
+    for (const [m, c] of Object.entries(e.months)) n.months[m] = n.months[m] ? [n.months[m][0] + c[0], n.months[m][1] + c[1]] : c;
+    map[key] = n;
+  };
+  for (const [k, e] of Object.entries(b.artists)) mergeEntity(out.artists, k, e);
+  for (const [k, e] of Object.entries(b.tracks)) mergeEntity(out.tracks, k, e);
+  for (const [k, v] of Object.entries(b.platforms)) out.platforms[k] = (out.platforms[k] || 0) + v;
+  const reps = {};
+  for (const r of [...a.repeats, ...b.repeats]) { const k = r.day + '\u0001' + r.artist + '\u0001' + r.name; reps[k] = reps[k] ? { ...r, count: reps[k].count + r.count } : { ...r }; }
+  out.repeats = Object.values(reps).sort((x, y) => y.count - x.count).slice(0, 10);
+  out.sessions = [...a.sessions, ...b.sessions].sort((x, y) => y.ms - x.ms).slice(0, 10);
+  const t = out.total, u = b.total;
+  t.ms += u.ms; t.plays += u.plays; t.rows += u.rows;
+  if (u.first && (!t.first || u.first < t.first)) t.first = u.first;
+  if (u.last && u.last > t.last) t.last = u.last;
+  t.lastTs = Math.max(t.lastTs || 0, u.lastTs || 0);
+  return out;
+}

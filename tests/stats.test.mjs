@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as C from '../js/core.js';
 import * as S from '../js/stats.js';
+import * as L from '../js/live.js';
 
 const NOW = new Date('2026-11-19T12:00:00Z');   // jueves
 const e = (ts, artist, album, track, ms = 200000, extra = {}) => ({
@@ -145,4 +146,75 @@ test('export básico ("Datos de la cuenta"): se normaliza y alimenta las estadí
   assert.equal(S.persona(s2).peakHour, 22);
   assert.deepEqual(C.aggregateHistory(norm, {}).into, {});                    // sin álbumes: no hay ranking de álbumes
   assert.deepEqual(C.normalizeEntries([ENTRIES[0]])[0], ENTRIES[0]);          // el ampliado pasa sin tocar
+});
+
+test('mergeStats(a, b) equivale a calcular todo junto', () => {
+  const cut = '2026-11-10';
+  const A = ENTRIES.filter(x => x.ts < cut), B = ENTRIES.filter(x => x.ts >= cut);
+  const m = S.mergeStats(S.buildStats(A), S.buildStats(B)), all = S.buildStats(ENTRIES);
+  assert.deepEqual(m.days, all.days);
+  assert.deepEqual(m.heat, all.heat);
+  assert.deepEqual(m.months, all.months);
+  assert.deepEqual(m.platforms, all.platforms);
+  assert.deepEqual(m.total, all.total);
+  assert.deepEqual(Object.keys(m.artists).sort(), Object.keys(all.artists).sort());
+  for (const k of Object.keys(all.artists)) assert.deepEqual(m.artists[k], all.artists[k], 'artista ' + k);
+  assert.deepEqual(m.tracks, all.tracks);
+  assert.equal(m.repeats[0].count, all.repeats[0].count);
+  assert.equal(S.mergeStats(null, all), all); assert.equal(S.mergeStats(all, null), all);
+});
+
+test('mergeHistory suma los meses de cada álbum', () => {
+  const cut = '2026-11-10';
+  const A = C.aggregateHistory(ENTRIES.filter(x => x.ts < cut), {}).into, B = C.aggregateHistory(ENTRIES.filter(x => x.ts >= cut), {}).into;
+  const all = C.aggregateHistory(ENTRIES, {}).into, m = C.mergeHistory(A, B);
+  assert.deepEqual(Object.keys(m).sort(), Object.keys(all).sort());
+  for (const k of Object.keys(all)) assert.deepEqual(m[k].months, all[k].months, 'álbum ' + k);
+});
+
+const RECENT = {
+  items: [
+    { played_at: '2026-11-19T10:05:00.000Z', track: { name: 'Tema 2', uri: 'spotify:track:2', duration_ms: 180000, artists: [{ name: 'A' }], album: { id: 'AL1', name: 'Disco A', images: [{ url: 'https://i/big' }, { url: 'https://i/mid' }] } } },
+    { played_at: '2026-11-19T10:00:00.000Z', track: { name: 'Tema 1', uri: 'spotify:track:1', duration_ms: 200000, artists: [{ name: 'A' }], album: { id: 'AL1', name: 'Disco A', images: [] } } },
+    { played_at: '2026-11-19T09:00:00.000Z', track: null }
+  ]
+};
+
+test('registro en vivo: parseRecent, mergeLive sin repetidas y con corte del importado', () => {
+  const inc = L.parseRecent(RECENT.items);
+  assert.equal(inc.length, 2); assert.equal(inc[0].image, 'https://i/mid'); assert.equal(inc[0].ms, 180000);
+  let { live, fresh } = L.mergeLive(L.emptyLive(), inc);
+  assert.equal(fresh.length, 2); assert.equal(live.entries[0].track, 'Tema 1');           // ordenadas por hora
+  assert.equal(live.cursor, Date.parse('2026-11-19T10:05:00.000Z'));
+  ({ live, fresh } = L.mergeLive(live, inc));                                              // la misma respuesta otra vez
+  assert.equal(fresh.length, 0); assert.equal(live.entries.length, 2);
+  // lo que ya cubre un historial importado no se vuelve a contar
+  const r = L.mergeLive(L.emptyLive(), inc, Date.parse('2026-11-19T10:02:00.000Z'));
+  assert.equal(r.live.entries.length, 1); assert.equal(r.live.entries[0].track, 'Tema 2');
+  assert.equal(L.pruneLive(live, Date.parse('2026-11-19T10:02:00.000Z')).entries.length, 1);
+});
+
+test('registro en vivo: un hueco posible si llegan 50 canciones nuevas', () => {
+  const many = Array.from({ length: 50 }, (_, i) => ({ ts: new Date(Date.UTC(2026, 10, 19, 10, i)).toISOString(), ms: 1, artist: 'A', track: 't' + i, album: '', albumId: '', image: '', uri: 'u' + i }));
+  const start = { ...L.emptyLive(), cursor: Date.parse('2026-11-19T09:00:00Z') };
+  assert.equal(L.mergeLive(start, many).live.gap, true);
+  assert.equal(L.mergeLive(L.emptyLive(), many).live.gap, false);                          // primera carga: no hay con qué comparar
+});
+
+test('el registro en vivo alimenta las mismas estadísticas que el historial', () => {
+  const { live } = L.mergeLive(L.emptyLive(), L.parseRecent(RECENT.items));
+  const entries = L.toEntries(live);
+  const ls = S.buildStats(entries);
+  assert.equal(ls.total.plays, 2); assert.equal(Object.keys(ls.platforms).length, 0);        // sin plataforma: no inventa "Otro"
+  const merged = S.mergeStats(st, ls);
+  assert.equal(merged.total.rows, st.total.rows + 2);
+  assert.equal(Object.keys(C.aggregateHistory(entries, {}).into).length, 1);                // álbum "Disco A"
+});
+
+test('parseNowPlaying', () => {
+  const j = { is_playing: true, progress_ms: 5000, currently_playing_type: 'track', item: { name: 'X', uri: 'u', duration_ms: 100000, artists: [{ name: 'Y' }], album: { id: 'AL', name: 'Z', images: [{ url: 'https://i/1' }] } } };
+  const n = L.parseNowPlaying(j);
+  assert.equal(n.title, 'X'); assert.equal(n.artist, 'Y'); assert.equal(n.playing, true); assert.equal(n.duration, 100000);
+  assert.equal(L.parseNowPlaying(null), null);
+  assert.equal(L.parseNowPlaying({ ...j, currently_playing_type: 'episode' }), null);
 });

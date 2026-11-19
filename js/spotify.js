@@ -2,6 +2,7 @@
 import { config } from './config.js';
 import { albumKey } from './core.js';
 import { prefs } from './storage.js';
+import { parseNowPlaying, parseRecent } from './live.js';
 
 const AUTH = 'https://accounts.spotify.com';
 const API = 'https://api.spotify.com/v1';
@@ -132,4 +133,21 @@ export async function loadApiAlbums(progress = () => {}) {
     if (!d.next) break;
   }
   return out;
+}
+
+// ---------- En vivo ----------
+// Últimas canciones escuchadas (Spotify guarda como mucho 50). `afterMs`: solo las posteriores a esa marca.
+export async function fetchRecent(afterMs = 0) {
+  const params = { limit: 50 };
+  if (afterMs) params.after = String(afterMs);
+  return parseRecent((await get('/me/player/recently-played', params)).items);
+}
+
+// Lo que suena ahora mismo. null si no suena nada; lanza { code: 'scope' } si falta el permiso (hay que reconectar)
+export async function fetchNowPlaying() {
+  const r = await fetch(`${API}/me/player/currently-playing`, { headers: { Authorization: 'Bearer ' + await token() } });
+  if (r.status === 204) return null;
+  if (r.status === 401 || r.status === 403) { const e = new Error('Falta el permiso de "lo que suena ahora": vuelve a conectar Spotify.'); e.code = 'scope'; throw e; }
+  if (!r.ok) throw new Error('Spotify respondió ' + r.status);
+  return parseNowPlaying(await r.json());
 }

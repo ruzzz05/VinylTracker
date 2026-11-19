@@ -332,3 +332,16 @@ export function normalizeEntries(entries) {
     return e;
   });
 }
+
+// Une dos historiales por álbum ({ key: {artist, name, id, months, tracks} }), sumando los meses
+export function mergeHistory(a, b) {
+  const out = { ...(a || {}) };
+  for (const [k, h] of Object.entries(b || {})) {
+    const o = out[k];
+    if (!o) { out[k] = h; continue; }
+    const months = { ...o.months };
+    for (const [m, c] of Object.entries(h.months)) months[m] = months[m] ? { ms: months[m].ms + c.ms, plays: months[m].plays + c.plays } : { ...c };
+    out[k] = { ...o, id: o.id || h.id, months, tracks: [...new Set([...(o.tracks || []), ...(h.tracks || [])])].slice(0, 60) };
+  }
+  return out;
+}

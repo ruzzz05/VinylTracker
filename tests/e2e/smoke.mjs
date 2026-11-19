@@ -65,11 +65,17 @@ await ctx.route('https://accounts.spotify.com/authorize**', r => {
   r.fulfill({ status: 302, headers: { location: `${BASE}?code=CODE&state=${u.searchParams.get('state')}` } });
 });
 await ctx.route('https://accounts.spotify.com/api/token', r => json(r, { access_token: 'a', refresh_token: 'r', expires_in: 3600 }));
+// Lo recién escuchado en Spotify (se amplía durante la prueba)
+const recentItem = (name, minsAgo) => ({ played_at: new Date(Date.now() - minsAgo * 60000).toISOString(),
+  track: { name, uri: 'spotify:track:' + name, duration_ms: 180000, artists: [{ name: 'Nirvana' }], album: { id: 'AL9', name: 'Nevermind', images: [] } } });
+let recent = [recentItem('En vivo 1', 5)];
 await ctx.route('https://api.spotify.com/v1/**', r => {
   const u = r.request().url();
   const alb = (id, name, artist) => ({ id, name, artists: [{ name: artist }], images: [], album_type: 'album', total_tracks: 10 });
   if (u.includes('/me/top/tracks')) return json(r, { items: [{ album: alb('s1', 'La Deriva', 'Vetusta Morla') }, { album: alb('s2', 'Nevermind', 'Nirvana') }] });
-  if (u.includes('recently-played')) return json(r, { items: [] });
+  if (u.includes('recently-played')) return json(r, { items: recent });
+  if (u.includes('currently-playing')) return json(r, { is_playing: true, progress_ms: 60000, currently_playing_type: 'track',
+    item: { name: 'Tema en directo', uri: 'spotify:track:live', duration_ms: 240000, artists: [{ name: 'Nirvana' }], album: { id: 'AL9', name: 'Nevermind', images: [] } } });
   return json(r, { items: [{ album: alb('s3', 'Guardado', 'Alguien') }], next: null });
 });
 
@@ -117,7 +123,7 @@ assert.match(await page.textContent('.tip'), /min|h/);
 const stxt = await page.textContent('#view');
 for (const t of ['Minutos por mes', 'Minutos por día', 'Cuándo escuchas', 'Récords y rachas', 'Cómo escuchas', 'Tu vinilo y tu Spotify', 'Curiosidades de plato', 'Tu colección'])
   assert.ok(stxt.includes(t), 'falta la tarjeta: ' + t);
-assert.ok(!/NaN|undefined|null|Infinity/.test(stxt), 'valores inválidos en las estadísticas');
+{ const bad = /.{0,40}(NaN|undefined|null|Infinity).{0,40}/.exec(stxt); assert.ok(!bad, 'valores inválidos en las estadísticas: «' + (bad && bad[0]) + '»'); }
 // captura larga de toda la pantalla de estadísticas (para revisarla a ojo)
 await page.setViewportSize({ width: 393, height: 3400 });
 await page.waitForTimeout(300);
@@ -197,6 +203,26 @@ await page.click('text=Conectar Spotify');
 await page.waitForFunction(() => localStorage.getItem('vt.spotify.token'), null, { timeout: 15000 });
 await page.waitForSelector('.row');
 await page.screenshot({ path: path.join(SHOTS, '7-tras-spotify.png') });
+
+// En vivo: "Ahora suena", barra de estado y registro que crece al actualizar
+await page.waitForSelector('#live-dot[data-state="ok"]');
+await page.waitForSelector('.nowcard');
+assert.match(await page.textContent('.nowcard'), /Tema en directo/);
+assert.match(await page.textContent('.nowcard'), /Suena ahora/);
+await page.screenshot({ path: path.join(SHOTS, '7b-en-vivo.png') });
+recent = [recentItem('En vivo 2', 1), ...recent];                       // acabas de escuchar otra canción
+await page.click('#live-refresh');
+await page.waitForFunction(() => document.querySelector('#live-dot')?.dataset.state === 'ok' && !document.querySelector('#live-refresh')?.disabled);
+await page.click('[data-tab=ajustes]');
+await page.waitForSelector('text=En vivo: 2 reproducciones guardadas');
+await page.click('[data-tab=ranking]');
+await page.click('.seg button:has-text("Estadísticas")');
+await page.waitForSelector('.hero .big');
+const hoy = await page.textContent('.tiles');
+assert.match(hoy, /Hoy/);
+assert.ok(!/NaN|undefined|null/.test(await page.textContent('#view')));
+await page.click('.seg button:has-text("Álbumes")');
+
 
 // Vuelta de Spotify a una ventana SIN el intento guardado (iPhone: vuelve a Safari, no a la app):
 // debe enseñar "Casi listo" y CONSERVAR el código en la dirección para poder copiarla
