@@ -13,10 +13,20 @@ const rand = n => b64url(crypto.getRandomValues(new Uint8Array(n)));
 
 export const clientId = () => prefs.get('spotify.client', config.spotifyClientId);
 
+const PENDING_KEY = 'spotify.pending';
+const PENDING_TTL = 30 * 60 * 1000;
+
+// Intentos de conexión recientes (varios a la vez: pulsar "Conectar" otra vez NO invalida el anterior)
+function pendings() {
+  let list;
+  try { list = JSON.parse(prefs.get(PENDING_KEY, '[]')); } catch (e) { list = []; }
+  return (Array.isArray(list) ? list : []).filter(p => p && p.state && Date.now() - p.at < PENDING_TTL);
+}
+
 export async function startLogin() {
   const verifier = rand(48), state = rand(12);
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
-  prefs.set('spotify.pending', JSON.stringify({ verifier, state, redirect: redirectUri(), at: Date.now() }));
+  prefs.set(PENDING_KEY, JSON.stringify(pendings().slice(-4).concat({ verifier, state, redirect: redirectUri(), at: Date.now() })));
   const q = new URLSearchParams({
     client_id: clientId(), response_type: 'code', redirect_uri: redirectUri(), scope: config.spotifyScopes,
     state, code_challenge_method: 'S256', code_challenge: challenge
@@ -24,27 +34,37 @@ export async function startLogin() {
   location.href = `${AUTH}/authorize?${q}`;
 }
 
+// ¿Esta dirección trae el código de vuelta de Spotify?
+export const hasCode = urlOrQuery => /[?&#]code=/.test(String(urlOrQuery || '')) || /^code=/.test(String(urlOrQuery || '').trim());
+
 // Acepta la URL completa (o solo la parte ?code=...&state=...) y canjea el código por tokens
 export async function finishLogin(urlOrQuery) {
   const raw = String(urlOrQuery || '').trim();
   const qs = new URLSearchParams(raw.includes('?') ? raw.slice(raw.indexOf('?') + 1) : raw.replace(/^#/, ''));
   if (qs.get('error')) throw new Error('Spotify rechazó el acceso: ' + qs.get('error'));
-  const pend = JSON.parse(prefs.get('spotify.pending', 'null'));
-  if (!pend) throw new Error('No hay un login en curso en este dispositivo. Pulsa "Conectar Spotify" otra vez.');
-  if (qs.get('state') !== pend.state || !qs.get('code')) throw new Error('Respuesta de Spotify no válida o caducada.');
+  if (!qs.get('code')) throw new Error('Esa dirección no contiene el código de Spotify (?code=…). Copia la que aparece justo después de aceptar, sin recortarla.');
+  const pend = pendings().find(p => p.state === qs.get('state'));
+  if (!pend) throw new Error('No encuentro ese intento de conexión en este dispositivo (o pasaron más de 30 minutos). Pulsa "Conectar Spotify" y pega la dirección nueva.');
   const tok = await tokenRequest({
     grant_type: 'authorization_code', code: qs.get('code'), redirect_uri: pend.redirect,
     client_id: clientId(), code_verifier: pend.verifier
   });
   saveToken(tok);
-  prefs.del('spotify.pending');
+  prefs.del(PENDING_KEY);
 }
 
 async function tokenRequest(body) {
   const r = await fetch(`${AUTH}/api/token`, {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body)
   });
-  if (!r.ok) throw new Error('Spotify no dio el acceso (' + r.status + ')');
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    if (j.error === 'invalid_grant') {
+      throw new Error('El código de Spotify ya se usó o caducó (dura pocos minutos y sirve una sola vez). Pulsa "Conectar Spotify" y pega la dirección nueva enseguida.');
+    }
+    if (j.error === 'invalid_client') throw new Error('Spotify no reconoce el Client ID. Revisa que sea el de tu app.');
+    throw new Error('Spotify no dio el acceso (' + r.status + (j.error_description ? ': ' + j.error_description : '') + ')');
+  }
   return r.json();
 }
 
@@ -57,7 +77,7 @@ function saveToken(t) {
 }
 
 export const isConnected = () => !!JSON.parse(prefs.get('spotify.token', '{}')).refresh;
-export const disconnect = () => { prefs.del('spotify.token'); prefs.del('spotify.pending'); };
+export const disconnect = () => { prefs.del('spotify.token'); prefs.del(PENDING_KEY); };
 
 async function token() {
   const t = JSON.parse(prefs.get('spotify.token', '{}'));

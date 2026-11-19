@@ -8,7 +8,7 @@ import * as fb from './firebase.js';
 import * as collection from './collection.js';
 import { readSpotifyZip } from './zip.js';
 
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 const $ = s => document.querySelector(s);
@@ -456,7 +456,7 @@ function vSettings() {
     h('details', null, h('summary', { class: 'muted' }, 'Si al volver de Spotify no entra solo'),
       h('p', { class: 'muted' }, 'Copia la URL completa de la barra de direcciones tras aceptar y pégala aquí.'),
       paste, h('button', { class: 'btn sec', onclick: async () => {
-        try { await spotify.finishLogin(paste.value); await refreshApi(); } catch (e) { toast(e.message, true); }
+        try { await spotify.finishLogin(paste.value); toast('Spotify conectado'); await refreshApi(); } catch (e) { toast(e.message, true); }
       } }, 'Completar conexión'))));
 
   // Historial
@@ -533,11 +533,34 @@ async function boot() {
   // Vuelta del login de Spotify: ?code=…&state=…
   const qs = new URLSearchParams(location.search);
   if (qs.has('code') || qs.has('error')) {
-    history.replaceState(null, '', location.pathname);
-    try { await spotify.finishLogin(qs.toString()); toast('Spotify conectado'); await refreshApi(); }
-    catch (e) { toast(e.message + ' Prueba "Si al volver de Spotify no entra solo" en Ajustes.', true); go('ajustes'); }
+    const full = location.href;
+    try {
+      await spotify.finishLogin(qs.toString());
+      history.replaceState(null, '', location.pathname);       // solo se limpia la dirección si todo ha ido bien
+      toast('Spotify conectado'); await refreshApi();
+    } catch (e) { showLanding(full, e.message); }
   } else if (fb.isLoggedIn()) {
     fb.readExtras().then(r => { if (!r.fromCache) { state.extras = r.albums; state.extrasAt = r.at; rebuildCollection(); render(); } }).catch(() => {});
   }
+}
+
+// Pantalla de "casi listo": se enseña cuando Spotify vuelve a una ventana que no puede completar la conexión
+// (típico en iPhone: vuelve a Safari en vez de a la app instalada). La dirección se conserva para copiarla.
+function showLanding(url, reason) {
+  const box = h('textarea', { readonly: true, rows: '5', style: 'width:100%;font-size:12px;user-select:text;-webkit-user-select:text' });
+  box.value = url;
+  view.replaceChildren(h('div', null,
+    h('div', { class: 'card' }, h('h3', null, 'Casi listo: falta un paso'),
+      h('p', null, reason),
+      h('p', null, 'Copia esta dirección completa y pégala en la app instalada: ',
+        h('b', null, 'Ajustes → Spotify → "Si al volver de Spotify no entra solo"'), '.'),
+      box,
+      h('div', { class: 'btns' },
+        h('button', { class: 'btn', onclick: async () => {
+          box.select();
+          try { await navigator.clipboard.writeText(url); toast('Dirección copiada'); } catch (e) { toast('Mantén pulsado el cuadro y elige Copiar', true); }
+        } }, 'Copiar dirección'),
+        h('button', { class: 'btn sec', onclick: () => { history.replaceState(null, '', location.pathname); go('ajustes'); } }, 'Ir a Ajustes')))));
+  setStatus('');
 }
 boot();

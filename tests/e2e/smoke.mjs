@@ -156,6 +156,18 @@ await page.waitForFunction(() => localStorage.getItem('vt.spotify.token'), null,
 await page.waitForSelector('.row');
 await page.screenshot({ path: path.join(SHOTS, '7-tras-spotify.png') });
 
+// Vuelta de Spotify a una ventana SIN el intento guardado (iPhone: vuelve a Safari, no a la app):
+// debe enseñar "Casi listo" y CONSERVAR el código en la dirección para poder copiarla
+const ctx2 = await browser.newContext({ ...devices['iPhone 14'], locale: 'es-ES' });
+const p2 = await ctx2.newPage();
+p2.setDefaultTimeout(15000);
+await p2.goto(BASE + '?code=ABC123&state=XYZ');
+await p2.waitForSelector('text=Casi listo');
+assert.ok(p2.url().includes('code=ABC123'), 'la dirección perdió el código');
+assert.ok((await p2.inputValue('textarea')).includes('code=ABC123'));
+await p2.screenshot({ path: path.join(SHOTS, '8-casi-listo.png') });
+await ctx2.close();
+
 assert.deepEqual(errors, []);
 console.log('OK: flujo completo, capturas en', SHOTS);
 await browser.close();
