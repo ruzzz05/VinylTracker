@@ -23,7 +23,8 @@ function pendings() {
   return (Array.isArray(list) ? list : []).filter(p => p && p.state && Date.now() - p.at < PENDING_TTL);
 }
 
-export async function startLogin() {
+// Crea el intento de conexión (se guarda aquí) y devuelve la dirección de autorización de Spotify
+export async function buildLoginUrl() {
   const verifier = rand(48), state = rand(12);
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
   prefs.set(PENDING_KEY, JSON.stringify(pendings().slice(-4).concat({ verifier, state, redirect: redirectUri(), at: Date.now() })));
@@ -31,7 +32,11 @@ export async function startLogin() {
     client_id: clientId(), response_type: 'code', redirect_uri: redirectUri(), scope: config.spotifyScopes,
     state, code_challenge_method: 'S256', code_challenge: challenge
   });
-  location.href = `${AUTH}/authorize?${q}`;
+  return `${AUTH}/authorize?${q}`;
+}
+
+export async function startLogin() {
+  location.href = await buildLoginUrl();
 }
 
 // ¿Esta dirección trae el código de vuelta de Spotify?

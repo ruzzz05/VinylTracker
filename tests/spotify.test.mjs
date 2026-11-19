@@ -60,3 +60,17 @@ test('hasCode', () => {
   assert.ok(S.hasCode('code=a&state=b'));
   assert.ok(!S.hasCode('https://x/VinylTracker/'));
 });
+
+test('buildLoginUrl (para abrir en Safari): no navega, guarda el intento y luego se puede completar', async () => {
+  store.clear(); location.href = '';
+  const url = await S.buildLoginUrl();
+  assert.equal(location.href, '', 'no debe navegar');
+  const u = new URL(url);
+  assert.equal(u.origin + u.pathname, 'https://accounts.spotify.com/authorize');
+  assert.equal(u.searchParams.get('redirect_uri'), 'https://x.test/VinylTracker/');
+  assert.equal(u.searchParams.get('code_challenge_method'), 'S256');
+  reply = ok;
+  await S.finishLogin(back(u.searchParams.get('state'), 'DESDE-SAFARI'));
+  assert.equal(sent.code, 'DESDE-SAFARI');
+  assert.ok(S.isConnected());
+});

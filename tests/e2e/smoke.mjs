@@ -151,6 +151,10 @@ await page.screenshot({ path: path.join(SHOTS, '6b-tras-anadir.png') });
 
 // Spotify: login PKCE simulado
 await page.click('[data-tab=ajustes]');
+// Enlace para hacer el login en Safari (cuando Spotify se queda en bucle en la app instalada)
+await page.click('summary:has-text("en bucle")');
+await page.click('text=Conseguir enlace para Safari');
+assert.match(await page.inputValue('textarea[readonly]'), /^https:\/\/accounts\.spotify\.com\/authorize\?/);
 await page.click('text=Conectar Spotify');
 await page.waitForFunction(() => localStorage.getItem('vt.spotify.token'), null, { timeout: 15000 });
 await page.waitForSelector('.row');

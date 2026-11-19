@@ -8,7 +8,7 @@ import * as fb from './firebase.js';
 import * as collection from './collection.js';
 import { readSpotifyZip } from './zip.js';
 
-const VERSION = '1.1.2';
+const VERSION = '1.1.3';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -469,6 +469,20 @@ function vSettings() {
         spotify.isConnected() ? 'Reconectar' : 'Conectar Spotify'),
       spotify.isConnected() ? h('button', { class: 'btn sec', onclick: refreshApi }, 'Actualizar datos') : null,
       spotify.isConnected() ? h('button', { class: 'btn danger', onclick: () => { spotify.disconnect(); render(); } }, 'Desconectar') : null),
+    h('details', null, h('summary', { class: 'muted' }, 'Si Spotify se queda en bucle y no me deja aceptar'),
+      h('p', { class: 'muted' }, 'En la app instalada, el login de Spotify a veces no guarda la sesión. Hazlo en Safari: 1) pulsa el botón y copia el enlace; 2) abre Safari (no la app), pega el enlace y entra con tu cuenta; 3) acepta; 4) copia la dirección a la que te lleve y pégala abajo, en "Si al volver…".'),
+      (() => {
+        const box = h('textarea', { readonly: true, rows: '5', hidden: true, style: 'width:100%;font-size:12px;user-select:text;-webkit-user-select:text' });
+        const copy = h('button', { class: 'btn sec', hidden: true, onclick: async () => {
+          box.select();
+          try { await navigator.clipboard.writeText(box.value); toast('Enlace copiado: pégalo en Safari'); } catch (e) { toast('Mantén pulsado el cuadro y elige Copiar', true); }
+        } }, 'Copiar enlace');
+        const make = h('button', { class: 'btn', onclick: async () => {
+          prefs.set('spotify.client', cid.value.trim());
+          box.value = await spotify.buildLoginUrl(); box.hidden = false; copy.hidden = false;
+        } }, 'Conseguir enlace para Safari');
+        return h('div', null, h('div', { class: 'btns' }, make, copy), box);
+      })()),
     h('details', null, h('summary', { class: 'muted' }, 'Si al volver de Spotify no entra solo'),
       h('p', { class: 'muted' }, 'Copia la URL completa de la barra de direcciones tras aceptar y pégala aquí.'),
       paste, h('button', { class: 'btn sec', onclick: async () => {
