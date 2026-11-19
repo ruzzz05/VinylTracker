@@ -96,3 +96,41 @@ test('lector de zip del export de Spotify (deflate real)', async () => {
   assert.equal(entries.length, 3);
   assert.equal(entries[0].master_metadata_album_album_name, 'Nevermind');
 });
+
+test('parseSpotifyAlbum: web, con idioma/parámetros y URI', () => {
+  const id = '2Gzdlis2gby7peCvJ0Poif';
+  assert.equal(C.parseSpotifyAlbum(`https://open.spotify.com/intl-es/album/${id}?si=abc`).id, id);
+  assert.equal(C.parseSpotifyAlbum(`spotify:album:${id}`).url, `https://open.spotify.com/album/${id}`);
+  assert.equal(C.parseSpotifyAlbum('https://open.spotify.com/track/' + id), null);
+  assert.equal(C.parseSpotifyAlbum(42), null);
+});
+
+test('normalizeTags: minúsculas, sin repetidos, máximo 8', () => {
+  assert.deepEqual(C.normalizeTags('Rap, trap | RAP'), ['rap', 'trap']);
+  assert.equal(C.normalizeTags('a,b,c,d,e,f,g,h,i,j').length, 8);
+});
+
+test('newAlbum valida enlace, nombre, artista y portada https', () => {
+  const ok = { spotifyUrl: 'https://open.spotify.com/album/2Gzdlis2gby7peCvJ0Poif', name: ' X ', artist: 'Y', image: 'https://i.scdn.co/a.jpg', tags: 'Rap', year: '2020', now: 5 };
+  const r = C.newAlbum(ok);
+  assert.ok(r.ok); assert.equal(r.album.name, 'X'); assert.deepEqual(r.album.tags, ['rap']); assert.equal(r.album.year, 2020); assert.equal(r.album.addedAt, 5);
+  assert.equal(C.newAlbum({ ...ok, image: 'http://x/a.jpg' }).ok, false);
+  assert.equal(C.newAlbum({ ...ok, artist: ' ' }).ok, false);
+  assert.equal(C.newAlbum({ ...ok, spotifyUrl: 'hola' }).ok, false);
+});
+
+test('parseExtras solo acepta discos bien formados; isOwner', () => {
+  const id = '2Gzdlis2gby7peCvJ0Poif';
+  const good = { id, artist: 'A', name: 'B', image: 'https://x/y.jpg', tags: [], url: 'https://open.spotify.com/album/' + id };
+  assert.equal(C.parseExtras(JSON.stringify({ albums: [good, { ...good, id: 'corto' }, { ...good, image: '' }] })).length, 1);
+  assert.deepEqual(C.parseExtras('no json'), []);
+  assert.ok(C.isOwner('u1', 'u1')); assert.ok(!C.isOwner('u1', 'u2')); assert.ok(!C.isOwner('', ''));
+});
+
+test('filterWall: buscador, estilo y orden; allTags', () => {
+  const l = [{ artist: 'Zeta', name: 'Uno', tags: ['rap'] }, { artist: 'Álvaro', name: 'Dos', tags: ['pop', 'rap'] }, { artist: 'Beta', name: 'Tres', tags: [] }];
+  assert.deepEqual(C.filterWall(l, '', '').map(a => a.name), ['Dos', 'Tres', 'Uno']);
+  assert.deepEqual(C.filterWall(l, 'alvaro', '').map(a => a.name), ['Dos']);
+  assert.deepEqual(C.filterWall(l, '', 'rap').map(a => a.name), ['Dos', 'Uno']);
+  assert.deepEqual(C.allTags(l), ['pop', 'rap']);
+});

@@ -25,6 +25,7 @@ const HISTORY = [...entry('Nirvana', 'Nevermind', 40), ...entry('Delta Goodrem',
   ...entry('Rosalía', 'Motomami (Deluxe)', 15), ...entry('Radiohead', 'OK Computer', 12), ...entry('Viejo', 'Antiguo', 30, '2024-01')];
 writeFileSync(path.join(SHOTS, 'history.json'), JSON.stringify(HISTORY));
 
+const OWNER = 'eFXlrMGYWIRQkAkzLr5ex5J4aS13';
 const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
 let discogsCalls = 0;
 
@@ -37,9 +38,16 @@ page.on('pageerror', e => errors.push(e.message));
 page.on('console', m => { if (m.type() === 'error') console.log('console.error:', m.text()); });
 
 await ctx.route('https://ruzzz05.github.io/mi-app/apps/vinilos/musica.csv', r => r.fulfill({ status: 200, contentType: 'text/csv', headers: { 'access-control-allow-origin': '*' }, body: CSV }));
-await ctx.route('https://identitytoolkit.googleapis.com/**', r => json(r, { idToken: 'tok', refreshToken: 'ref', localId: 'uid', expiresIn: '3600' }));
-await ctx.route('https://firestore.googleapis.com/**', r => json(r, { fields: { updatedAt: { integerValue: '1' },
-  json: { stringValue: JSON.stringify({ albums: [{ id: 'abc', artist: 'Radiohead', name: 'OK Computer', image: '', tags: [], url: '' }] }) } } }));
+await ctx.route('https://identitytoolkit.googleapis.com/**', r => json(r, { idToken: 'tok', refreshToken: 'ref', localId: OWNER, expiresIn: '3600' }));
+const mk = (id, artist, name) => ({ id, artist, name, image: 'https://i.scdn.co/' + id + '.jpg', tags: ['rock'], url: 'https://open.spotify.com/album/' + id });
+let cloud = JSON.stringify({ albums: [mk('AAAAAAAAAAAAAAAAAAAAAA', 'Radiohead', 'OK Computer')] });
+let patched = null;
+await ctx.route('https://firestore.googleapis.com/**', r => {
+  if (r.request().method() === 'PATCH') { patched = JSON.parse(r.request().postData()); cloud = patched.fields.json.stringValue; return json(r, {}); }
+  return json(r, { fields: { updatedAt: { integerValue: '1' }, json: { stringValue: cloud } } });
+});
+await ctx.route('https://open.spotify.com/oembed**', r => json(r, { title: 'Nuevo Disco', thumbnail_url: 'https://i.scdn.co/nuevo.jpg' }));
+await ctx.route('https://itunes.apple.com/**', r => json(r, { results: [{ artistName: 'Artista Nuevo', collectionName: 'Nuevo Disco', releaseDate: '2024-05-01T00:00:00Z', primaryGenreName: 'Rap' }] }));
 await ctx.route('https://api.discogs.com/**', r => {
   discogsCalls++;
   const u = decodeURIComponent(r.request().url()).replace(/\+/g, ' ');
@@ -103,11 +111,43 @@ await page.waitForSelector('.sheet .panel');
 await page.screenshot({ path: path.join(SHOTS, '5-ficha.png') });
 await page.click('.sheet >> text=Cerrar');
 
-// Colección: 2 del CSV + 1 de la nube
+// Colección: 2 del CSV + 1 de la nube, como pared de portadas
 await page.click('[data-tab=coleccion]');
-await page.waitForSelector('.grid .cell');
-assert.equal((await page.$$('.grid .cell')).length, 3);
+await page.waitForSelector('.wall .tile');
+assert.equal((await page.$$('.wall .tile')).length, 3);
+assert.match(await page.textContent('.counter'), /3 vinilos/);
 await page.screenshot({ path: path.join(SHOTS, '6-coleccion.png') });
+// Buscador y filtro por estilo
+await page.fill('input[type=search]', 'rosal');
+assert.equal((await page.$$('.wall .tile')).length, 1);
+await page.fill('input[type=search]', '');
+await page.selectOption('select[aria-label="Filtrar por estilo"]', 'rock');
+assert.equal((await page.$$('.wall .tile')).length, 1);          // solo OK Computer (nube) tiene "rock"
+await page.selectOption('select[aria-label="Filtrar por estilo"]', '');
+// Regresión: la ficha de un disco sin enlace (Motomami) no debe enseñar "null"
+await page.click('button.tile');
+await page.waitForSelector('.sheet .panel');
+assert.ok(!/null/.test(await page.textContent('.sheet .panel')), 'la ficha enseña "null"');
+await page.click('.sheet >> text=Cerrar');
+// Disco aleatorio
+await page.click('text=Disco aleatorio');
+await page.waitForSelector('.sheet .panel h2');
+await page.click('.sheet >> text=Cerrar');
+// Dueño: añadir disco (Spotify oEmbed + iTunes simulados) y comprobar lo escrito en Firestore
+await page.click('text=+ Añadir disco');
+await page.fill('.sheet input[type=url]', 'https://open.spotify.com/album/5K79FLRUCSysQnVESLcTdb?si=x');
+await page.fill('.sheet input[type=url]', 'https://open.spotify.com/album/2Gzdlis2gby7peCvJ0Poif');
+await page.waitForSelector('.sheet >> text=ya está en tu colección');
+await page.fill('.sheet input[type=url]', 'https://open.spotify.com/album/5K79FLRUCSysQnVESLcTdb?si=x');
+await page.waitForSelector('.sheet .sug');
+await page.click('.sheet .sug');
+await page.click('.sheet >> text=Guardar disco');
+await page.waitForSelector('.sheet', { state: 'hidden' });
+assert.ok(patched && patched.fields.json.stringValue.includes('Nuevo Disco') && patched.fields.json.stringValue.includes('Artista Nuevo'), 'no se escribió en Firestore');
+assert.ok(patched.fields.json.stringValue.includes('OK Computer'), 'se pisó lo que había en la nube');
+await page.waitForSelector('.wall .tile');
+assert.equal((await page.$$('.wall .tile')).length, 4);
+await page.screenshot({ path: path.join(SHOTS, '6b-tras-anadir.png') });
 
 // Spotify: login PKCE simulado
 await page.click('[data-tab=ajustes]');

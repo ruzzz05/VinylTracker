@@ -8,6 +8,8 @@ export const config = {
     projectId: 'mi-app-490b5'
   },
   authEmailDomain: '@mi-app.invalid',
+  // UID del dueño de la colección (solo él ve "Añadir disco"; escribir lo impiden las reglas de Firestore). No es secreto.
+  ownerUid: 'eFXlrMGYWIRQkAkzLr5ex5J4aS13',
   miApp: {
     base: 'https://ruzzz05.github.io/mi-app/',
     csv: 'apps/vinilos/musica.csv',

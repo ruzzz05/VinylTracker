@@ -81,7 +81,7 @@ export function mergeCollection(base, extras) {
   for (const e of extras || []) {
     if (!e || !e.artist || !e.name) continue;
     if (e.id && seen.has(e.id)) continue;
-    out.push({ artist: e.artist, name: e.name, image: e.image || '', tags: e.tags || [], url: e.url || '', id: e.id || '', extra: true });
+    out.push({ artist: e.artist, name: e.name, image: e.image || '', tags: e.tags || [], url: e.url || '', year: e.year || null, id: e.id || '', extra: true });
   }
   return out;
 }
@@ -221,3 +221,70 @@ export function estimate(album, offers) {
 
 export const money = (v, cur = 'EUR') =>
   v == null ? '—' : new Intl.NumberFormat('es-ES', { style: 'currency', currency: cur }).format(v);
+
+// ---------- Alta de discos (misma lógica que la app Vinilos de mi-app) ----------
+const SPOTIFY_ID = '[A-Za-z0-9]{22}';
+const MAX_TAGS = 8, MAX_TAG = 24, MAX_NAME = 120, MAX_ARTIST = 80, MAX_IMAGE = 600;
+
+// Enlace de álbum de Spotify (web, con idioma o parámetros, o URI spotify:album:...) -> { id, url } | null
+export function parseSpotifyAlbum(text) {
+  if (typeof text !== 'string') return null;
+  const t = text.trim();
+  let m = t.match(new RegExp('^spotify:album:(' + SPOTIFY_ID + ')$'));
+  if (!m) m = t.match(new RegExp('^https?://open\\.spotify\\.com/(?:intl-[a-z-]+/)?album/(' + SPOTIFY_ID + ')(?:[/?#].*)?$'));
+  return m ? { id: m[1], url: 'https://open.spotify.com/album/' + m[1] } : null;
+}
+
+// "Rap, trap | RAP" -> ['rap', 'trap']
+export function normalizeTags(text) {
+  if (typeof text !== 'string') return [];
+  const out = [];
+  for (const raw of text.split(/[,|]/)) {
+    const t = raw.trim().toLowerCase().slice(0, MAX_TAG);
+    if (t && !out.includes(t)) out.push(t);
+    if (out.length === MAX_TAGS) break;
+  }
+  return out;
+}
+
+const cleanText = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
+const validImage = u => typeof u === 'string' && /^https:\/\/\S+$/.test(u) && u.length <= MAX_IMAGE;
+const cleanYear = y => { const n = Number(y); return Number.isInteger(n) && n >= 1900 && n <= 2100 ? n : null; };
+
+export function newAlbum({ spotifyUrl, name, artist, image, tags, year, now }) {
+  const sp = parseSpotifyAlbum(spotifyUrl);
+  if (!sp) return { ok: false, error: 'Eso no es un enlace de álbum de Spotify.' };
+  const n = cleanText(name, MAX_NAME), a = cleanText(artist, MAX_ARTIST);
+  if (!n) return { ok: false, error: 'Falta el nombre del álbum.' };
+  if (!a) return { ok: false, error: 'Falta el artista.' };
+  if (!validImage(image)) return { ok: false, error: 'La portada no es válida.' };
+  return { ok: true, album: { id: sp.id, artist: a, name: n, image, tags: Array.isArray(tags) ? tags : normalizeTags(tags),
+    url: sp.url, year: cleanYear(year), addedAt: now || Date.now() } };
+}
+
+const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+export function validStored(a) {
+  return isObj(a) && typeof a.id === 'string' && new RegExp('^' + SPOTIFY_ID + '$').test(a.id) &&
+    typeof a.artist === 'string' && !!a.artist && typeof a.name === 'string' && !!a.name &&
+    validImage(a.image) && Array.isArray(a.tags) && a.url === 'https://open.spotify.com/album/' + a.id;
+}
+
+// Lo que viene de la nube: solo se aceptan discos bien formados
+export function parseExtras(text) {
+  if (typeof text !== 'string') return [];
+  let v;
+  try { v = JSON.parse(text); } catch (e) { return []; }
+  return isObj(v) && Array.isArray(v.albums) ? v.albums.filter(validStored) : [];
+}
+
+export const isOwner = (uid, ownerUid) => typeof uid === 'string' && !!uid && uid === ownerUid;
+
+export const allTags = list => [...new Set(list.flatMap(a => a.tags || []).filter(Boolean))].sort();
+
+// Filtro de la pared (buscador + estilo) y orden por artista y álbum
+export function filterWall(list, query, tag) {
+  const q = fold(query);
+  return list
+    .filter(a => (!q || fold(a.artist).includes(q) || fold(a.name).includes(q)) && (!tag || (a.tags || []).includes(tag)))
+    .sort((x, y) => fold(x.artist).localeCompare(fold(y.artist), 'es') || fold(x.name).localeCompare(fold(y.name), 'es'));
+}

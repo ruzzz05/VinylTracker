@@ -1,6 +1,7 @@
 // Firebase por REST (sin SDK): login con usuario/contraseña y lectura de tu colección en Firestore.
 // Misma cuenta y mismo proyecto que mi-app. Nunca se guarda la contraseña, solo el token de renovación.
 import { config } from './config.js';
+import { isOwner as isOwnerUid, parseExtras } from './core.js';
 import * as store from './storage.js';
 import { prefs } from './storage.js';
 
@@ -53,24 +54,47 @@ async function idToken() {
   return j.id_token;
 }
 
+const DOC_URL = `https://firestore.googleapis.com/v1/projects/${config.firebase.projectId}/databases/(default)/documents/${config.firestoreDoc}`;
+
+// Lee el documento tal cual está en la nube -> { json } | null (si todavía no existe)
+async function fetchDoc() {
+  const r = await fetch(DOC_URL, { headers: { Authorization: 'Bearer ' + await idToken() } });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(r.status === 403 ? 'Firestore respondió 403 (¿reglas o cuenta incorrecta?)' : 'Firestore respondió ' + r.status);
+  const doc = await r.json();
+  const f = doc.fields || {};
+  return f.json && typeof f.json.stringValue === 'string' ? { json: f.json.stringValue } : null;
+}
+
 // Discos añadidos desde mi-app (documento vinilos/coleccion). Devuelve [] si no hay ninguno.
 export async function readExtras({ force = false } = {}) {
   const cached = await store.get('extras');
   if (!force && cached && Date.now() - cached.at < TTL) return { albums: cached.albums, at: cached.at, fromCache: true };
-  const url = `https://firestore.googleapis.com/v1/projects/${config.firebase.projectId}/databases/(default)/documents/${config.firestoreDoc}`;
-  const r = await fetch(url, { headers: { Authorization: 'Bearer ' + await idToken() } });
-  let albums = [];
-  if (r.status === 404) albums = [];
-  else if (!r.ok) throw new Error(r.status === 403 ? 'Firestore respondió 403 (¿reglas o cuenta incorrecta?)' : 'Firestore respondió ' + r.status);
-  else {
-    const doc = await r.json();
-    const json = doc.fields && doc.fields.json && doc.fields.json.stringValue;
-    try { const v = JSON.parse(json || '{}'); albums = Array.isArray(v.albums) ? v.albums.filter(a => a && a.artist && a.name) : []; }
-    catch (e) { albums = []; }
-  }
+  const doc = await fetchDoc();
+  const albums = doc ? parseExtras(doc.json) : [];
   const at = Date.now();
   await store.set('extras', { at, albums });
   return { albums, at, fromCache: false };
+}
+
+export const uid = () => prefs.get('fb.uid');
+export const isOwner = () => isLoggedIn() && isOwnerUid(uid(), config.ownerUid);
+
+// Solo el dueño. Lee el documento justo antes de escribir (así no se pisa lo de otro dispositivo);
+// las reglas de Firestore son las que impiden de verdad que otra cuenta escriba.
+export async function addAlbum(album) {
+  if (!isOwner()) throw new Error('Solo el dueño puede añadir discos.');
+  const doc = await fetchDoc();
+  const list = doc ? parseExtras(doc.json) : [];
+  const next = list.some(a => a.id === album.id) ? list : list.concat(album);
+  const at = Date.now();
+  const body = { fields: { updatedAt: { integerValue: String(at) }, json: { stringValue: JSON.stringify({ albums: next }) } } };
+  const r = await fetch(DOC_URL + '?updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=json', {
+    method: 'PATCH', headers: { Authorization: 'Bearer ' + await idToken(), 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error(r.status === 403 ? 'Firestore respondió 403 (tu cuenta no es la del dueño o faltan las reglas)' : 'Firestore respondió ' + r.status);
+  await store.set('extras', { at, albums: next });
+  return { albums: next, at };
 }
 
 export async function cachedExtras() {
