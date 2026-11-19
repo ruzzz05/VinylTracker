@@ -8,9 +8,11 @@ import * as fb from './firebase.js';
 import * as collection from './collection.js';
 import { readSpotifyZip } from './zip.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 const $ = s => document.querySelector(s);
 const view = $('#view');
+// Sin zoom: iOS ignora a veces user-scalable=no, así que se bloquean también los gestos de pellizco
+for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, e => e.preventDefault());
 
 // ---------- utilidades de interfaz (todo con textContent: nada de HTML de terceros) ----------
 function h(tag, props, ...kids) {
@@ -86,7 +88,7 @@ function go(tab) {
   state.tab = tab; prefs.set('tab', tab);
   markTab();
   render();
-  window.scrollTo(0, 0);
+  view.scrollTop = 0;
 }
 function markTab() {
   document.querySelectorAll('.tabs button').forEach(b => {

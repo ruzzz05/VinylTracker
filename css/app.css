@@ -11,24 +11,29 @@
   }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html { background: var(--bg); }
+html { background: var(--bg); height: 100%; overflow: hidden; touch-action: manipulation; }
+/* La página no se desplaza: el body ocupa la pantalla y solo hace scroll <main>.
+   Así la barra inferior nunca se mueve (ni con el rebote de iOS ni con la barra de Safari). */
 body {
-  margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-  padding-top: env(safe-area-inset-top); padding-bottom: calc(var(--tabs-h) + env(safe-area-inset-bottom));
-  -webkit-text-size-adjust: 100%;
+  position: fixed; inset: 0; margin: 0; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg); color: var(--text); font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  padding-top: env(safe-area-inset-top); overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
 }
-.top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px 4px; }
+input, textarea { -webkit-user-select: text; user-select: text; }
+.top { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px 4px; }
 .top h1 { margin: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 8px; letter-spacing: -.02em; }
 .top h1 img { border-radius: 7px; }
 .status { font-size: .75rem; color: var(--muted); text-align: right; }
-main { padding: 8px 16px 24px; max-width: 760px; margin: 0 auto; outline: none; }
+main { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; padding: 8px 16px 24px; outline: none; }
+main > * { max-width: 760px; margin-left: auto; margin-right: auto; }
 h2 { font-size: 1.05rem; margin: 18px 0 8px; }
 p { margin: 8px 0; }
 .muted { color: var(--muted); font-size: .88rem; }
 a { color: var(--acc1); }
 
 .tabs {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex;
+  flex: none; position: relative; z-index: 20; display: flex;
   height: calc(var(--tabs-h) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
   background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid var(--line);
