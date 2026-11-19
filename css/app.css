@@ -20,7 +20,7 @@ html { background: var(--bg); height: 100%; overflow: hidden; touch-action: mani
 /* La página no se desplaza: el body ocupa la pantalla y solo hace scroll <main>.
    Así la barra inferior nunca se mueve (ni con el rebote de iOS ni con la barra de Safari). */
 body {
-  position: fixed; inset: 0; margin: 0; display: flex; flex-direction: column; overflow: hidden;
+  position: fixed; top: 0; left: 0; right: 0; height: var(--app-h, 100%); margin: 0; display: flex; flex-direction: column; overflow: hidden;
   background: var(--bg); color: var(--text); font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   padding-top: env(safe-area-inset-top); overscroll-behavior: none;
   -webkit-text-size-adjust: 100%; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;

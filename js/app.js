@@ -8,9 +8,25 @@ import * as fb from './firebase.js';
 import * as collection from './collection.js';
 import { readSpotifyZip } from './zip.js';
 
-const VERSION = '1.1.1';
+const VERSION = '1.1.2';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
+// iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
+// (el de la barra de estado) y la barra inferior se queda flotando con un hueco debajo.
+// Se usa el alto real de la pantalla; en el navegador normal no se toca nada.
+const isStandalone = () => navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+function fixAppHeight() {
+  if (!isStandalone()) return;
+  if (Math.abs(innerWidth - screen.width) > 1 && Math.abs(innerWidth - screen.height) > 1) return;   // ventana más pequeña que la pantalla (iPad con pantalla dividida): no tocar
+  const landscape = window.matchMedia && matchMedia('(orientation: landscape)').matches;
+  const full = landscape ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+  if (full > 0) document.documentElement.style.setProperty('--app-h', full + 'px');
+}
+fixAppHeight();
+for (const ev of ['resize', 'orientationchange', 'pageshow']) window.addEventListener(ev, fixAppHeight);
+document.addEventListener('visibilitychange', fixAppHeight);   // iOS vuelve a descuadrarlo al reabrir la app
+setTimeout(fixAppHeight, 300); setTimeout(fixAppHeight, 1200);
+
 const $ = s => document.querySelector(s);
 const view = $('#view');
 // Sin zoom: iOS ignora a veces user-scalable=no, así que se bloquean también los gestos de pellizco
