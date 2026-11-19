@@ -8,7 +8,7 @@ import * as fb from './firebase.js';
 import * as collection from './collection.js';
 import { readSpotifyZip } from './zip.js';
 
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 const $ = s => document.querySelector(s);
 const view = $('#view');
 // Sin zoom: iOS ignora a veces user-scalable=no, así que se bloquean también los gestos de pellizco
@@ -338,7 +338,11 @@ function vSettings() {
     spotify.isConnected() ? h('p', { class: 'own' }, '✓ Conectado · última carga: ' + when(state.apiAt)) : h('p', { class: 'muted' }, 'Sin conectar.'),
     field('Client ID (app de developer.spotify.com)', cid),
     h('p', { class: 'muted' }, 'Redirect URI que debes tener añadida en tu app de Spotify:'),
-    h('code', { style: 'word-break:break-all;font-size:.8rem' }, spotify.redirectUri()),
+    h('code', { style: 'word-break:break-all;font-size:.8rem;user-select:text;-webkit-user-select:text' }, spotify.redirectUri()),
+    h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: async () => {
+      try { await navigator.clipboard.writeText(spotify.redirectUri()); toast('Copiada: pégala en Redirect URIs de Spotify'); }
+      catch (e) { toast('No se pudo copiar: selecciónala a mano', true); }
+    } }, 'Copiar redirect URI')),
     h('div', { class: 'btns' },
       h('button', { class: 'btn', onclick: async () => { prefs.set('spotify.client', cid.value.trim()); await spotify.startLogin(); } },
         spotify.isConnected() ? 'Reconectar' : 'Conectar Spotify'),
