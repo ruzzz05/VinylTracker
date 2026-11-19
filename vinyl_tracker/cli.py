@@ -59,7 +59,9 @@ def main(argv=None):
     load_env()
     ap = argparse.ArgumentParser(prog="vinyl_tracker")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("auth-spotify", help="Login en Spotify (PKCE) y guarda el token")
+    a = sub.add_parser("auth-spotify", help="Login en Spotify (PKCE) y guarda el token")
+    a.add_argument("--manual", action="store_true", help="solo imprime la URL de login (paso 1)")
+    a.add_argument("--finish", metavar="URL", help="URL de redirección pegada (paso 2)")
     p = sub.add_parser("analyze", help="Ranking de álbumes + precios y disponibilidad")
     p.add_argument("--history", help="carpeta o .zip del export de Spotify")
     p.add_argument("--api", action="store_true", help="añade datos de la API de Spotify")
@@ -70,7 +72,12 @@ def main(argv=None):
     p.add_argument("--no-stores", action="store_true")
     p.add_argument("--no-fnac", action="store_true")
     args = ap.parse_args(argv)
-    if args.cmd == "auth-spotify":
+    if args.cmd == "auth-spotify" and args.finish:
+        spotify_api.finish_manual(args.finish)
+    elif args.cmd == "auth-spotify" and args.manual:
+        cid = os.environ.get("SPOTIFY_CLIENT_ID") or sys.exit("Define SPOTIFY_CLIENT_ID")
+        print(spotify_api.begin_manual(cid))
+    elif args.cmd == "auth-spotify":
         cid = os.environ.get("SPOTIFY_CLIENT_ID") or sys.exit("Define SPOTIFY_CLIENT_ID en .env")
         spotify_api.login(cid)
     else:

@@ -60,6 +60,40 @@ def login(client_id: str) -> None:
     print(f"Token guardado en {TOKEN_FILE}")
 
 
+PENDING = Path(".cache/spotify_pending.json")
+
+
+def _auth_url(client_id, challenge, state):
+    return f"{AUTH}/authorize?" + urllib.parse.urlencode({
+        "client_id": client_id, "response_type": "code", "redirect_uri": REDIRECT,
+        "scope": SCOPES, "state": state, "code_challenge_method": "S256", "code_challenge": challenge})
+
+
+def begin_manual(client_id: str) -> str:
+    """Paso 1 (sin navegador local): genera la URL y guarda verifier/state en .cache/."""
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    state = secrets.token_urlsafe(12)
+    PENDING.parent.mkdir(exist_ok=True)
+    PENDING.write_text(json.dumps({"verifier": verifier, "state": state, "client_id": client_id}))
+    PENDING.chmod(0o600)
+    return _auth_url(client_id, challenge, state)
+
+
+def finish_manual(redirected_url: str) -> None:
+    """Paso 2: recibe la URL a la que redirigió Spotify (aunque dé error de conexión) y guarda tokens."""
+    pend = json.loads(PENDING.read_text())
+    q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(redirected_url.strip()).query).items()}
+    if q.get("state") != pend["state"] or "code" not in q:
+        raise SystemExit(f"URL no válida o login rechazado: {q.get('error', 'falta code/state')}")
+    tok = get_json(f"{AUTH}/api/token", data={
+        "grant_type": "authorization_code", "code": q["code"], "redirect_uri": REDIRECT,
+        "client_id": pend["client_id"], "code_verifier": pend["verifier"]})
+    _save(tok, pend["client_id"])
+    PENDING.unlink()
+    print(f"Token guardado en {TOKEN_FILE}")
+
+
 def _save(tok: dict, client_id: str) -> None:
     prev = json.loads(TOKEN_FILE.read_text()) if TOKEN_FILE.exists() else {}
     data = {"client_id": client_id,
