@@ -59,7 +59,9 @@ await ctx.route('https://api.discogs.com/**', r => {
   if (u.includes('/marketplace/stats/')) return json(r, { lowest_price: { currency: 'EUR', value: 19 }, num_for_sale: 36 });
   return json(r, { minimum: '€1', median: '€2', maximum: '€3' });
 });
-await ctx.route('https://i.scdn.co/**', r => r.abort());
+// Imagen de 1x1 píxel para las fotos de prueba
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+await ctx.route('https://i.scdn.co/**', r => r.fulfill({ status: 200, contentType: 'image/png', body: PNG }));
 await ctx.route('https://accounts.spotify.com/authorize**', r => {
   const u = new URL(r.request().url());
   r.fulfill({ status: 302, headers: { location: `${BASE}?code=CODE&state=${u.searchParams.get('state')}` } });
@@ -73,6 +75,7 @@ await ctx.route('https://api.spotify.com/v1/**', r => {
   const u = r.request().url();
   const alb = (id, name, artist) => ({ id, name, artists: [{ name: artist }], images: [], album_type: 'album', total_tracks: 10 });
   if (u.includes('/me/top/tracks')) return json(r, { items: [{ album: alb('s1', 'La Deriva', 'Vetusta Morla') }, { album: alb('s2', 'Nevermind', 'Nirvana') }] });
+  if (u.includes('/search')) return json(r, { artists: { items: [{ name: 'Nirvana', popularity: 80, images: [{ url: 'https://i.scdn.co/art-big' }, { url: 'https://i.scdn.co/art-mid' }] }] } });
   if (u.includes('recently-played')) return json(r, { items: recent });
   if (u.includes('currently-playing')) return json(r, { is_playing: true, progress_ms: 60000, currently_playing_type: 'track',
     item: { name: 'Tema en directo', uri: 'spotify:track:live', duration_ms: 240000, artists: [{ name: 'Nirvana' }], album: { id: 'AL9', name: 'Nevermind', images: [] } } });
@@ -224,6 +227,12 @@ await page.waitForSelector('.hero .big');
 const hoy = await page.textContent('.tiles');
 assert.match(hoy, /Hoy/);
 assert.ok(!/NaN|undefined|null/.test(await page.textContent('#view')));
+// Fotos de artista (Spotify conectado): Nirvana debe cambiar la inicial por su foto
+await page.click('.seg button:has-text("Artistas")');
+await page.waitForSelector('.row.static .avwrap img.cover.round');
+assert.equal((await page.$$('.row.static .avwrap img.cover.round')).length, 1, 'solo Nirvana tiene foto en la prueba');
+assert.ok((await page.$$('.row.static .avwrap .cover.ph.round')).length >= 3, 'los demás conservan la inicial');
+await page.screenshot({ path: path.join(SHOTS, '7c-artistas-fotos.png') });
 await page.click('.seg button:has-text("Álbumes")');
 
 

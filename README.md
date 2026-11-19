@@ -13,6 +13,7 @@ cuáles te faltan, **cuánto cuestan** y **dónde hay stock** (o preventa).
 - **Colección**: tu lista de [mi-app](https://github.com/ruzzz05/mi-app) (CSV público + discos añadidos desde la app, leídos de Firestore con tu cuenta).
 - **Comprar**: lo que escuchas y aún no tienes, con el precio de tienda, stock o preventa. Al tocar un disco, su ficha con Discogs y los enlaces.
 - Ficha por álbum con enlaces a Discogs, tiendas, Fnac (búsqueda) y Spotify.
+- **Fotos de artista** en la lista de Artistas: de Spotify si está conectado y, si no, de Discogs (con tu token). Se guardan en el móvil, así que cada artista se consulta una sola vez.
 - **En vivo** (con Spotify conectado): una tarjeta **«Suena ahora»** (con aviso de si ya lo tienes en vinilo) y un registro propio que se actualiza solo cada minuto y al volver a la app, y que se suma a Ranking y Estadísticas. Límites: Spotify solo recuerda tus últimas 50 canciones y la app solo puede consultarlas mientras está abierta, así que ábrela de vez en cuando; la duración de cada canción se toma completa (aproximada). Al importar un historial, lo que ya cubre deja de contarse dos veces.
 
 ## Instalar en el iPhone

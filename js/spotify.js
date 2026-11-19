@@ -151,3 +151,9 @@ export async function fetchNowPlaying() {
   if (!r.ok) throw new Error('Spotify respondió ' + r.status);
   return parseNowPlaying(await r.json());
 }
+
+// Búsqueda de artistas por nombre (para su foto)
+export async function searchArtist(name) {
+  const d = await get('/search', { q: `artist:"${String(name).replace(/"/g, '')}"`, type: 'artist', limit: 5 });
+  return (d.artists && d.artists.items) || [];
+}

@@ -251,3 +251,8 @@ details.dt th, details.dt td { text-align: left; padding: 3px 4px; border-bottom
 .nowcard .nowlbl { color: var(--viz); font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .nowcard .own, .nowcard .chip { align-self: flex-start; }
 .nowcard .bar { margin: 6px 0 0; height: 4px; }
+
+/* Fotos de artista: redondas */
+.avwrap { width: 56px; height: 56px; flex: none; }
+.avwrap .cover { width: 56px; height: 56px; }
+.cover.round, .cover.ph.round { border-radius: 50%; }

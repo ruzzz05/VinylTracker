@@ -2,6 +2,7 @@
 import { h } from './dom.js';
 import * as S from './stats.js';
 import { columnChart, hbars, heatmap, segBar, dataTable } from './charts.js';
+import { artistAvatar } from './artists.js';
 
 const PERIOD = { 1: 'este mes', 6: 'los últimos 6 meses', 12: 'el último año', 0: 'todo el historial' };
 const PERIOD_SHORT = { 1: 'este mes', 6: 'los últimos 6 meses', 12: 'el último año', 0: 'todo el historial' };
@@ -25,8 +26,8 @@ export function artistsView({ stats, apiAlbums, months, now = new Date(), onImpo
     const list = S.topArtists(stats, months, now, 50);
     if (!list.length) return h('div', { class: 'empty' }, 'No hay reproducciones en este periodo.');
     return h('ul', { class: 'list' }, list.map((a, i) => h('li', null, h('div', { class: 'row static' },
-      h('div', { class: 'n' }, i + 1), avatar(a.name),
-      h('div', { class: 't' }, h('b', null, a.name), h('span', null, `${S.fmtNum(a.plays)} reprod. · ${S.fmtPct(a.share)} del tiempo`)),
+      h('div', { class: 'n' }, i + 1), artistAvatar(a.name),
+      h('div', { class: 't' }, h('b', null, a.name), h('span', null, `${S.fmtNum(a.plays)} reprod. · ${S.fmtPct(a.share)}`)),
       h('div', { class: 'm' }, h('b', null, S.fmtDur(a.ms)))))));
   }
   // Solo con la API: se suman los puntos de sus álbumes (aproximado)
@@ -36,7 +37,7 @@ export function artistsView({ stats, apiAlbums, months, now = new Date(), onImpo
   if (!list.length) return needImport(onImport);
   return h('div', null, note('Aproximado, con tus tops de Spotify. Importa tu historial para tiempos reales.'),
     h('ul', { class: 'list' }, list.map((a, i) => h('li', null, h('div', { class: 'row static' },
-      h('div', { class: 'n' }, i + 1), avatar(a.name),
+      h('div', { class: 'n' }, i + 1), artistAvatar(a.name),
       h('div', { class: 't' }, h('b', null, a.name), h('span', null, `${a.albums} álbum${a.albums === 1 ? '' : 'es'} en tus tops`)),
       h('div', { class: 'm' }, h('b', null, a.points + ' pts')))))));
 }

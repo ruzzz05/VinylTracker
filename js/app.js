@@ -12,7 +12,7 @@ import { buildStats, mergeStats } from './stats.js';
 import * as L from './live.js';
 import { artistsView, tracksView, statsView } from './statsview.js';
 
-const VERSION = '1.4.1';
+const VERSION = '1.4.2';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla

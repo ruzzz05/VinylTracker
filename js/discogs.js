@@ -50,3 +50,8 @@ export async function lookup(album, currency = 'EUR') {
   await store.set(ck, { at: Date.now(), v });
   return v;
 }
+
+// Búsqueda de artistas por nombre (para su foto). Solo devuelve imágenes con token.
+export async function searchArtist(name) {
+  return (await call('/database/search', { type: 'artist', q: name, per_page: 5 })).results || [];
+}
