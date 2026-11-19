@@ -98,6 +98,35 @@ assert.ok(owned >= 3, 'ULTRASWAN (csv, por id), Motomami (csv, por nombre) y OK 
 await page.click('.seg >> text=Todo');
 assert.ok((await page.$$('.row')).length >= 5);
 
+// Estadísticas: Artistas, Canciones y Estadísticas salen del historial importado
+const view = name => page.click(`.seg button:has-text("${name}")`);
+await view('Artistas');
+await page.waitForSelector('.row.static');
+assert.ok((await page.$$('.row.static')).length >= 5, 'faltan artistas');
+assert.match(await page.textContent('#view'), /Nirvana/);
+await view('Canciones');
+await page.waitForSelector('.row.static');
+assert.ok((await page.$$('.row.static')).length >= 5, 'faltan canciones');
+await view('Estadísticas');
+await page.waitForSelector('.hero .big');
+assert.equal((await page.$$('.cc')).length, 2, 'deben salir las dos gráficas de columnas');
+assert.ok((await page.$$('.hm-c')).length >= 168, 'falta el mapa de calor');
+await page.click('.cc-col >> nth=11');
+await page.waitForSelector('.tip:not([hidden])');
+assert.match(await page.textContent('.tip'), /min|h/);
+const stxt = await page.textContent('#view');
+for (const t of ['Minutos por mes', 'Minutos por día', 'Cuándo escuchas', 'Récords y rachas', 'Cómo escuchas', 'Tu vinilo y tu Spotify', 'Curiosidades de plato', 'Tu colección'])
+  assert.ok(stxt.includes(t), 'falta la tarjeta: ' + t);
+assert.ok(!/NaN|undefined|null|Infinity/.test(stxt), 'valores inválidos en las estadísticas');
+// captura larga de toda la pantalla de estadísticas (para revisarla a ojo)
+await page.setViewportSize({ width: 393, height: 3400 });
+await page.waitForTimeout(300);
+await page.screenshot({ path: path.join(SHOTS, '2b-estadisticas-larga.png') });
+await page.setViewportSize({ width: 393, height: 664 });
+await view('Álbumes');
+await page.waitForSelector('.row:not(.static)');
+
+
 // Comprar: ofertas de tienda (datos locales) + Discogs simulado
 await page.click('[data-tab=comprar]');
 await page.waitForSelector('.card .big');

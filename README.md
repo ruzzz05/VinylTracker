@@ -8,7 +8,8 @@ cuáles te faltan, **cuánto cuestan** y **dónde hay stock** (o preventa).
 ![Logo](icons/logo-1024.png)
 
 ## Qué hace
-- **Ranking**: tus álbumes más escuchados (1 mes, 6 meses, 1 año o todo) con minutos reales si importas el export de Spotify, o aproximado con la API.
+- **Ranking** con cuatro vistas: **Álbumes**, **Artistas**, **Canciones** y **Estadísticas**, para 1 mes, 6 meses, 1 año o todo el historial. Con el export de Spotify salen minutos reales; con solo la API, un ranking aproximado.
+- **Estadísticas** (con el historial importado): tiempo escuchado hoy / 7 días / 30 días / este año con media diaria y comparación con el periodo anterior, minutos por mes y por día, mapa de calor por día de la semana y hora, tu perfil horario (noctámbulo, madrugador…), récords y rachas, artistas descubiertos, saltos y modo aleatorio, plataformas, y las que solo hace VinylTracker: qué parte de lo que escuchas ya tienes en vinilo, **vinilos olvidados** (no suenan en Spotify desde hace un año), artistas que escuchas y no tienes en vinilo y curiosidades de plato.
 - **Colección**: tu lista de [mi-app](https://github.com/ruzzz05/mi-app) (CSV público + discos añadidos desde la app, leídos de Firestore con tu cuenta).
 - **Comprar**: lo que escuchas y aún no tienes, con precio de tienda o de Discogs, stock/preventa y el coste total.
 - Ficha por álbum con enlaces a Discogs, tiendas, Fnac (búsqueda) y Spotify.
@@ -33,7 +34,8 @@ cuáles te faltan, **cuánto cuestan** y **dónde hay stock** (o preventa).
 ## Cómo funciona
 ```
 index.html, css/, js/        PWA sin build (módulos ES): ranking, colección, precios
-js/core.js                   Lógica pura (emparejar álbumes, ranking, ofertas) · tests en tests/
+js/core.js · js/stats.js     Lógica pura (emparejar álbumes, ranking, ofertas, estadísticas) · tests en tests/
+js/charts.js · statsview.js  Gráficos HTML/CSS (columnas, barras, mapa de calor) y pantallas de estadísticas
 js/spotify.js · discogs.js   APIs que permiten CORS: se llaman desde el navegador
 js/firebase.js               Login y lectura de Firestore por REST (sin SDK)
 js/zip.js                    Lee el .zip de Spotify en el móvil

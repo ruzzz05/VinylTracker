@@ -7,8 +7,11 @@ import * as discogs from './discogs.js';
 import * as fb from './firebase.js';
 import * as collection from './collection.js';
 import { readSpotifyZip } from './zip.js';
+import { h, safeUrl } from './dom.js';
+import { buildStats } from './stats.js';
+import { artistsView, tracksView, statsView } from './statsview.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -33,19 +36,6 @@ const view = $('#view');
 for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, e => e.preventDefault());
 
 // ---------- utilidades de interfaz (todo con textContent: nada de HTML de terceros) ----------
-function h(tag, props, ...kids) {
-  const e = document.createElement(tag);
-  for (const [k, v] of Object.entries(props || {})) {
-    if (v == null || v === false) continue;
-    if (k === 'class') e.className = v;
-    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
-    else if (k === 'value' || k === 'disabled' || k === 'checked') e[k] = v;
-    else e.setAttribute(k, v === true ? '' : v);
-  }
-  for (const kid of kids.flat()) if (kid != null && kid !== false) e.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
-  return e;
-}
-const safeUrl = u => (/^https?:\/\//i.test(u || '') ? u : '#');
 const when = ts => (ts ? new Date(ts).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 
 let toastTimer;
@@ -73,6 +63,7 @@ const state = {
   history: {}, apiAlbums: {}, apiAt: 0, historyInfo: null,
   base: [], extras: [], extrasAt: 0, owned: null, collection: [],
   storeIndex: [], storeDate: '',
+  stats: null, rankView: prefs.get('rankView', 'albums'),
   csvAt: 0, syncing: false, syncError: '',
   prices: new Map(),          // key -> { discogs }
   filter: 'todos', search: '', busy: ''
@@ -84,6 +75,7 @@ const rankingList = () => C.buildRanking({ history: state.history, api: state.ap
 async function loadAll() {
   state.history = await store.get('history', {});
   state.historyInfo = await store.get('historyInfo', null);
+  state.stats = await store.get('stats', null);
   const api = await store.get('api', null);
   if (api) { state.apiAlbums = api.albums; state.apiAt = api.at; }
   try { state.base = await collection.loadBase(); } catch (e) { toast('No se pudo leer tu colección de mi-app: ' + e.message, true); }
@@ -154,6 +146,13 @@ function albumRow(r, i) {
     metric(r)));
 }
 
+const RANK_VIEWS = [['albums', 'Álbumes'], ['artists', 'Artistas'], ['tracks', 'Canciones'], ['stats', 'Estadísticas']];
+
+function rankTabs() {
+  return h('div', { class: 'seg', role: 'group', 'aria-label': 'Vista' },
+    RANK_VIEWS.map(([k, label]) => h('button', { 'aria-pressed': String(state.rankView === k), onclick: () => { state.rankView = k; prefs.set('rankView', k); render(); } }, label)));
+}
+
 function vRanking() {
   const root = h('div');
   const hasHistory = Object.keys(state.history).length > 0;
@@ -165,8 +164,19 @@ function vRanking() {
       h('div', { class: 'btns', style: 'justify-content:center' }, h('button', { class: 'btn', onclick: () => go('ajustes') }, 'Ir a Ajustes'))));
     return root;
   }
-  if (hasHistory) root.append(periodBar());
-  else root.append(h('p', { class: 'muted' }, 'Ranking aproximado con tus tops de Spotify. Para minutos reales importa el export de tu historial en Ajustes.'));
+  root.append(rankTabs());
+  const view = state.rankView;
+  const goSettings = () => go('ajustes');
+  // El periodo vale para todas las vistas que usan el historial
+  if (hasHistory || state.stats) root.append(periodBar());
+  if (view === 'artists') { root.append(artistsView({ stats: state.stats, apiAlbums: state.apiAlbums, months: state.months, onImport: goSettings })); return root; }
+  if (view === 'tracks') { root.append(tracksView({ stats: state.stats, months: state.months, onImport: goSettings })); return root; }
+  if (view === 'stats') {
+    root.append(statsView({ stats: state.stats, history: state.history, collection: state.collection, ranking: rankingList().slice(0, 40),
+      months: state.months, onImport: goSettings }));
+    return root;
+  }
+  if (!hasHistory) root.append(h('p', { class: 'muted' }, 'Ranking aproximado con tus tops de Spotify. Para minutos reales importa el export de tu historial en Ajustes.'));
   const list = rankingList().slice(0, 60);
   const sources = [hasHistory && 'historial', hasApi && 'API de Spotify'].filter(Boolean).join(' + ');
   root.append(h('div', { class: 'chips' }, h('span', { class: 'chip' }, 'Fuente: ' + sources),
@@ -503,7 +513,7 @@ function vSettings() {
     h('p', { class: 'muted' }, 'spotify.com/account/privacy → "Historial de reproducciones ampliado". Importa el .zip tal cual (o todos los .json a la vez; una nueva importación sustituye a la anterior). Se procesa en tu móvil, no se sube a ningún sitio.'),
     info ? h('p', null, `${info.albums} álbumes · ${info.plays} reproducciones · ${info.from} → ${info.to}`) : null,
     file, h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => importHistory(file.files) }, 'Importar'),
-      info ? h('button', { class: 'btn danger', onclick: async () => { await store.del('history'); await store.del('historyInfo'); state.history = {}; state.historyInfo = null; render(); } }, 'Borrar historial') : null)));
+      info ? h('button', { class: 'btn danger', onclick: async () => { await store.del('history'); await store.del('historyInfo'); await store.del('stats'); state.history = {}; state.historyInfo = null; state.stats = null; render(); } }, 'Borrar historial') : null)));
 
   // Discogs
   const du = h('input', { type: 'text', value: prefs.get('discogs.user'), autocapitalize: 'none', placeholder: 'usuario de Discogs' });
@@ -544,8 +554,11 @@ async function importHistory(files) {
     if (!Object.keys(into).length) throw new Error('No encontré reproducciones con álbum. Pide "Historial de reproducciones ampliado" (el normal no incluye álbum).');
     const months = Object.values(into).flatMap(a => Object.keys(a.months)).sort();
     const info = { albums: Object.keys(into).length, plays: used, from: months[0], to: months[months.length - 1], skipped };
-    await store.set('history', into); await store.set('historyInfo', info);
-    state.history = into; state.historyInfo = info;
+    setStatus('Calculando estadísticas…');
+    await new Promise(r => setTimeout(r, 30));          // deja pintar el aviso antes del cálculo
+    const stats = buildStats(entries);
+    await store.set('history', into); await store.set('historyInfo', info); await store.set('stats', stats);
+    state.history = into; state.historyInfo = info; state.stats = stats;
     toast(`Historial importado: ${info.albums} álbumes`);
     go('ranking');
   } catch (e) { toast(e.message, true); setStatus(''); }
