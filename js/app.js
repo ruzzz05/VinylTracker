@@ -12,7 +12,7 @@ import { buildStats, mergeStats } from './stats.js';
 import * as L from './live.js';
 import { artistsView, tracksView, statsView } from './statsview.js';
 
-const VERSION = '1.4.0';
+const VERSION = '1.4.1';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -69,7 +69,7 @@ const state = {
   now: undefined, nowError: '', liveBusy: false, liveError: '',
   csvAt: 0, syncing: false, syncError: '',
   prices: new Map(),          // key -> { discogs }
-  filter: 'todos', search: '', busy: ''
+  filter: 'todos', search: ''
 };
 
 // Lo que ven las pantallas es lo importado MÁS lo recogido en vivo
@@ -451,8 +451,6 @@ async function syncAll() {
 const syncExtras = syncAll;
 
 // ---------- Comprar ----------
-let cancelLookup = false;
-
 function vBuy() {
   const root = h('div');
   const all = rankingList().filter(r => !r.owned).slice(0, 40);
@@ -460,7 +458,7 @@ function vBuy() {
   if (missing.length && !state.peeking) {
     state.peeking = true;      // precios ya consultados antes (caché local): se pintan sin red
     Promise.all(missing.map(r => discogs.peek(r).then(v => { if (v) state.prices.set(r.key, v); return !!v; })))
-      .then(found => { state.peeking = false; if (found.some(Boolean) && state.tab === 'comprar' && !state.busy) render(); });
+      .then(found => { state.peeking = false; if (found.some(Boolean) && state.tab === 'comprar') render(); });
   }
   const withPrice = r => C.estimate({ discogs: state.prices.get(r.key) }, r.offers) != null;
   const filters = {
@@ -468,39 +466,16 @@ function vBuy() {
     stock: r => r.offers.some(o => o.available), preventa: r => r.offers.some(o => o.preorder)
   };
   const list = all.filter(filters[state.filter]);
-  const total = all.reduce((s, r) => s + (C.estimate({ discogs: state.prices.get(r.key) }, r.offers) || 0), 0);
-  const priced = all.filter(withPrice).length;
 
   if (!all.length) {
-    root.append(h('div', { class: 'empty' }, 'Cuando haya ranking, aquí verás qué te falta en vinilo y cuánto cuesta.'));
+    root.append(h('div', { class: 'empty' }, 'Cuando haya ranking, aquí verás lo que escuchas y todavía no tienes en vinilo.'));
     return root;
   }
-  root.append(h('div', { class: 'card' },
-    h('p', { class: 'muted' }, 'Coste de comprar en vinilo lo que aún no tienes (top 40)'),
-    h('div', { class: 'big' }, C.money(total)),
-    h('p', { class: 'muted' }, `${priced} de ${all.length} con precio · tiendas actualizadas: ${state.storeDate ? when(Date.parse(state.storeDate)) : 'sin datos'}`),
-    state.busy ? h('div', null, h('div', { class: 'bar' }, h('i', { style: `width:${state.busyPct || 0}%` })), h('p', { class: 'muted' }, state.busy),
-      h('button', { class: 'btn sec', onclick: () => { cancelLookup = true; } }, 'Parar'))
-      : h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => lookupAll(all) }, 'Buscar precios en Discogs'))));
+  root.append(h('p', { class: 'muted' }, 'Lo que más escuchas y aún no tienes en vinilo. Toca un disco para ver dónde comprarlo.'));
   root.append(h('div', { class: 'chips' }, [['todos', 'Todos'], ['precio', 'Con precio'], ['stock', 'En stock'], ['preventa', 'Preventa']]
     .map(([k, label]) => h('button', { class: 'chip', 'aria-pressed': String(state.filter === k), onclick: () => { state.filter = k; render(); } }, label))));
   root.append(list.length ? h('ul', { class: 'list' }, list.map(albumRow)) : h('div', { class: 'empty' }, 'Nada con este filtro.'));
   return root;
-}
-
-async function lookupAll(albums) {
-  cancelLookup = false;
-  let done = 0;
-  for (const r of albums) {
-    if (cancelLookup) break;
-    state.busy = `Consultando Discogs: ${r.artist} – ${r.name}`; state.busyPct = Math.round(done / albums.length * 100);
-    if (state.tab === 'comprar') render();
-    try { state.prices.set(r.key, await discogs.lookup(r, config.currency)); }
-    catch (e) { toast(e.message, true); break; }
-    done++;
-  }
-  state.busy = '';
-  if (state.tab === 'comprar') render();
 }
 
 // ---------- Ficha de álbum ----------

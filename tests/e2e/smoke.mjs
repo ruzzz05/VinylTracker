@@ -135,14 +135,17 @@ await page.waitForSelector('.row:not(.static)');
 
 // Comprar: ofertas de tienda (datos locales) + Discogs simulado
 await page.click('[data-tab=comprar]');
-await page.waitForSelector('.card .big');
-await page.screenshot({ path: path.join(SHOTS, '3-comprar-antes.png') });
-await page.click('text=Buscar precios en Discogs');
-await page.waitForFunction(() => !document.querySelector('.bar'), null, { timeout: 60000 });
-assert.ok(discogsCalls > 0);
-await page.screenshot({ path: path.join(SHOTS, '4-comprar.png') });
+await page.waitForSelector('.list .row');
+const comprarTxt = await page.textContent('#view');
+assert.ok(!/Coste de comprar|Buscar precios en Discogs/.test(comprarTxt), 'ya no debe haber total en euros ni cálculo en bloque');
+assert.equal((await page.$$('#view .big')).length, 0);
+await page.screenshot({ path: path.join(SHOTS, '3-comprar.png') });
+// La ficha sí consulta el precio de un disco concreto en Discogs
 await page.click('.row >> nth=0');
 await page.waitForSelector('.sheet .panel');
+await page.click('#dlook');
+await page.waitForSelector('text=Copia más barata');
+assert.ok(discogsCalls > 0);
 await page.screenshot({ path: path.join(SHOTS, '5-ficha.png') });
 await page.click('.sheet >> text=Cerrar');
 
