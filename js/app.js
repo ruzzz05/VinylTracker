@@ -14,10 +14,11 @@ import { artistsView, tracksView, statsView } from './statsview.js';
 import * as W from './wishlist.js';
 import * as cloud from './cloud.js';
 import * as wv from './wishview.js';
-import { concertsView, cancelConcerts } from './concertsview.js';
-import { trackCover, knownCovers } from './covers.js';
+import { concertsView } from './concertsview.js';
+import { trackCover, albumCover, knownCovers } from './covers.js';
+import * as imgcache from './imgcache.js';
 
-const VERSION = '1.6.1';
+const VERSION = '1.7.0';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -53,14 +54,14 @@ function toast(msg, isErr) {
 }
 const setStatus = s => { $('#status').textContent = s || ''; };
 
-function coverEl(a, cls = '') {
-  const letter = (a.name || a.artist || '?').trim().charAt(0).toUpperCase();
-  const ph = () => h('div', { class: 'cover ph ' + cls }, letter);
-  if (!a.image) return ph();
-  const img = h('img', { class: 'cover ' + cls, src: safeUrl(a.image), alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
-  img.addEventListener('error', () => img.replaceWith(ph()));
-  return img;
+// Portadas conocidas (API de Spotify + registro en vivo), recalculadas solo cuando cambian
+let knownMemo = { api: null, live: null, map: {} };
+function known() {
+  if (knownMemo.api !== state.apiAlbums || knownMemo.live !== state.live) knownMemo = { api: state.apiAlbums, live: state.live, map: knownCovers({ apiAlbums: state.apiAlbums, live: state.live }) };
+  return knownMemo.map;
 }
+// Álbum o single; si no trae portada se busca (Spotify / iTunes) y se guarda. Lo ya visto sale al instante.
+const coverEl = (a, cls = '') => albumCover(a, known(), cls);
 
 // ---------- estado ----------
 const state = {
@@ -91,6 +92,7 @@ const rankingList = () => C.buildRanking({ history: state.effHistory, api: state
   .map(r => ({ ...r, owned: C.isOwned(r, state.owned), offers: C.matchStores(r, state.storeIndex) }));
 
 async function loadAll() {
+  imgcache.preload().catch(() => {});
   state.history = await store.get('history', {});
   state.historyInfo = await store.get('historyInfo', null);
   state.stats = await store.get('stats', null);
@@ -119,7 +121,6 @@ function rebuildCollection() {
 
 // ---------- navegación ----------
 function go(tab) {
-  cancelConcerts();
   state.tab = tab; prefs.set('tab', tab);
   markTab();
   render();
@@ -194,7 +195,7 @@ function vRanking() {
   if (hasHistory || state.effStats) root.append(periodBar());
   if (view === 'artists') { root.append(artistsView({ stats: state.effStats, apiAlbums: state.apiAlbums, months: state.months, onImport: goSettings })); return root; }
   if (view === 'tracks') { root.append(tracksView({ stats: state.effStats, months: state.months, onImport: goSettings,
-    cover: (() => { const known = knownCovers({ apiAlbums: state.apiAlbums, live: state.live }); return t => trackCover(t, known); })() })); return root; }
+    cover: t => trackCover(t, known()) })); return root; }
   if (view === 'stats') {
     root.append(statsView({ stats: state.effStats, history: state.effHistory, collection: state.collection, ranking: rankingList().slice(0, 40),
       months: state.months, onImport: goSettings }));
@@ -304,8 +305,7 @@ function startLive() {
 function tileEl(a) {
   const letter = (a.name || a.artist || '?').trim().charAt(0).toUpperCase();
   const ph = () => h('div', { class: 'ph' }, letter);
-  const media = a.image ? h('img', { src: safeUrl(a.image), alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : ph();
-  if (a.image) media.addEventListener('error', () => media.replaceWith(ph()));
+  const media = a.image ? imgcache.cachedImg(a.image, { onFail: img => img.replaceWith(ph()) }) : ph();
   const cap = h('span', { class: 'cap' }, h('b', null, a.name), h('i', null, a.artist));
   const link = safeUrl(a.url);
   // Como en mi-app: tocar una portada abre el álbum en Spotify
@@ -760,13 +760,6 @@ function vSettings() {
     h('p', { class: 'muted' }, 'discogs.com/settings/developers → Generate new token. Con token las consultas son más rápidas. Se guarda solo en este dispositivo.'),
     field('Usuario', du), field('Token', dt),
     h('button', { class: 'btn', onclick: () => { prefs.set('discogs.user', du.value.trim()); prefs.set('discogs.token', dt.value.trim()); toast('Guardado'); } }, 'Guardar')));
-
-  // Ticketmaster (conciertos)
-  const tm = h('input', { type: 'password', value: prefs.get('tm.key'), autocomplete: 'off', autocapitalize: 'none', placeholder: 'Consumer Key' });
-  root.append(h('div', { class: 'card' }, h('h3', null, 'Conciertos (Ticketmaster)'),
-    h('p', { class: 'muted' }, 'developer.ticketmaster.com → crear cuenta → My Apps → copia la Consumer Key (gratis). Se guarda solo en este dispositivo.'),
-    field('Consumer Key', tm),
-    h('button', { class: 'btn', onclick: () => { prefs.set('tm.key', tm.value.trim()); toast('Guardado'); } }, 'Guardar')));
 
   // Tema
   const theme = h('select', { 'aria-label': 'Tema' }, [['', 'Automático (del sistema)'], ['light', 'Claro'], ['dark', 'Oscuro']].map(([v, l]) => h('option', { value: v }, l)));

@@ -15,8 +15,8 @@ cuáles te faltan, **cuánto cuestan** y **dónde hay stock** (o preventa).
   - **Sugeridos**: lo que escuchas y aún no tienes, con el precio de tienda, stock o preventa. Al tocar un disco, su ficha con Discogs y los enlaces. Lo que marcas como comprado deja de salir.
   - **Deseos**: vinilos que quieres, como **álbum en cualquier edición** o como **edición concreta de Discogs**. Se añaden desde la ficha de un disco, buscando en Discogs, a mano o **escaneando el código de barras** (cámara; si el navegador no tiene lector propio se usa ZXing, y también puedes teclear el código). La app te **avisa** cuando aparece en stock o preventa en las tiendas, o cuando hay copias a la venta en Discogs (aviso dentro de la app y, si los activas, notificaciones del sistema).
   - **Comprados**: lo que ya has comprado, con fecha y precio opcional, **sin añadirlo a la colección**.
-- **Conciertos**: próximas fechas de tus 30 artistas más escuchados, por orden y agrupadas por mes, con filtro de país (España por defecto). Usa la API gratuita de Ticketmaster: necesita tu *Consumer Key* (Ajustes o la propia pantalla).
-- Las **canciones** del ranking llevan portada: la del álbum si ya se conoce y, si no, la de iTunes Search (sin cuenta). Se guardan en el móvil.
+- **Conciertos**: próximas fechas de tus 50 artistas más escuchados, por orden y agrupadas por mes, con filtro de país (España por defecto). Un GitHub Action descarga cada día los conciertos de música de Ticketmaster y los publica con la web; la app los cruza en el móvil con tus artistas. Sin claves en el móvil (ver «Conciertos» más abajo).
+- **Portadas** en canciones, álbumes y singles (aunque no pertenezcan a ningún álbum): la del álbum si ya se conoce y, si no, Spotify (si está conectado) o iTunes Search. Las imágenes se guardan en el móvil (hasta 600): al cambiar de pestaña o reabrir la app no se vuelven a descargar.
 - Ficha por álbum con enlaces a Discogs, tiendas, Fnac (búsqueda) y Spotify.
 - **Fotos de artista** en la lista de Artistas: de Spotify si está conectado y, si no, de Discogs (con tu token). Se guardan en el móvil, así que cada artista se consulta una sola vez.
 - **En vivo** (con Spotify conectado): una tarjeta **«Suena ahora»** (con aviso de si ya lo tienes en vinilo) y un registro propio que se actualiza solo cada minuto y al volver a la app, y que se suma a Ranking y Estadísticas. Límites: Spotify solo recuerda tus últimas 50 canciones y la app solo puede consultarlas mientras está abierta, así que ábrela de vez en cuando; la duración de cada canción se toma completa (aproximada). Al importar un historial, lo que ya cubre deja de contarse dos veces.
@@ -32,7 +32,6 @@ cuáles te faltan, **cuánto cuestan** y **dónde hay stock** (o preventa).
 | **Cuenta de mi-app** | Usuario y contraseña de tu app Vinilos. La contraseña no se guarda. |
 | **Spotify (API)** | Crea una app en <https://developer.spotify.com/dashboard>, añade el redirect URI que muestra Ajustes (`https://ruzzz05.github.io/VinylTracker/`), pon su *Client ID* y pulsa **Conectar Spotify**. Login PKCE, sin secreto. |
 | **Historial de Spotify** | spotify.com/account/privacy. Sirven dos paquetes y puedes pedir los dos: **Datos de la cuenta** (llega antes; último año; sin álbumes: da artistas, canciones y estadísticas) y **Historial de reproducciones ampliado** (todo el histórico y los álbumes; puede tardar hasta 30 días). Importa el `.zip` tal cual. Se procesa en el móvil. |
-| **Ticketmaster** | <https://developer.ticketmaster.com> → crea cuenta → *My Apps* → copia la *Consumer Key* (gratis) y pégala en Ajustes o en la pantalla Conciertos. Solo para Conciertos. |
 | **Discogs** | <https://www.discogs.com/settings/developers> → *Generate new token*. Con token: más rápido; **imprescindible para buscar en Discogs** (deseos y código de barras). |
 
 ## Privacidad
@@ -44,7 +43,8 @@ cuáles te faltan, **cuánto cuestan** y **dónde hay stock** (o preventa).
 index.html, css/, js/        PWA sin build (módulos ES): ranking, colección, precios
 js/core.js · js/stats.js     Lógica pura (emparejar álbumes, ranking, ofertas, estadísticas) · tests en tests/
 js/wishlist.js · wishview.js Deseos y comprados (lógica pura de avisos + pantallas); barcode.js lee códigos de barras (js/vendor/zxing.min.js)
-js/concerts.js · concertsview.js  Conciertos (Ticketmaster); js/covers.js portadas de canciones
+js/concerts.js · concertsview.js  Conciertos (data/concerts.json); js/covers.js · imgcache.js portadas y caché de imágenes; js/cloud.js copia en Firestore
+cli/vinyl_tracker/concerts.py   Descarga de Ticketmaster (en CI)
 js/charts.js · statsview.js  Gráficos HTML/CSS (columnas, barras, mapa de calor) y pantallas de estadísticas
 js/spotify.js · discogs.js   APIs que permiten CORS: se llaman desde el navegador
 js/firebase.js               Login y lectura de Firestore por REST (sin SDK)
@@ -57,6 +57,12 @@ cli/                         Versión de línea de comandos en Python (opcional)
 **Tiendas**: Universal Music Online y Apparell (Shopify). No permiten CORS, así que un GitHub Action descarga
 sus catálogos de vinilos cada día y los publica junto a la web (`data/stores.json`).
 **Fnac** bloquea las consultas automáticas: se ofrece un enlace de búsqueda.
+
+## Conciertos (una sola vez)
+1. Crea una cuenta en <https://developer.ticketmaster.com> y copia la *Consumer Key* de tu app (gratis).
+2. En el repo: **Settings → Secrets and variables → Actions → New repository secret**, nombre `TICKETMASTER_KEY`, valor la clave.
+3. Lanza el workflow (**Actions → Publicar en GitHub Pages → Run workflow**) o espera al de la noche. Países por defecto: ES, PT, FR, DE, GB, IT (cámbialos con la variable `CONCERT_COUNTRIES` en `pages.yml`).
+Sin el secreto, el sitio se publica igual y la pestaña Conciertos avisa de que faltan datos.
 
 ## Publicar en GitHub Pages
 1. Repo → **Settings → Pages → Source: GitHub Actions**.

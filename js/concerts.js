@@ -1,41 +1,31 @@
-// Conciertos próximos de tus artistas más escuchados, con la API Discovery de Ticketmaster
-// (gratis, con clave propia: developer.ticketmaster.com; permite llamarla desde el navegador).
-// Las funciones puras (parseo, orden, filtros) se prueban con `node --test tests/`.
+// Conciertos próximos de tus artistas más escuchados.
+// Un GitHub Action descarga cada día los conciertos de música de Ticketmaster (con la clave guardada como secreto del repo)
+// y los publica en data/concerts.json; aquí se cruzan en el móvil con tus artistas. Ni la clave ni tus datos de escucha salen del dispositivo.
+// Las funciones puras se prueban con `node --test tests/`.
 import { fold, tokens } from './core.js';
-import * as store from './storage.js';
-import { prefs } from './storage.js';
 
-const API = 'https://app.ticketmaster.com/discovery/v2/events.json';
-const TTL = 12 * 3600 * 1000;
+export const COUNTRY_NAMES = { ES: 'España', PT: 'Portugal', FR: 'Francia', DE: 'Alemania', GB: 'Reino Unido', IT: 'Italia', NL: 'Países Bajos', US: 'Estados Unidos' };
 
-export const hasKey = () => !!prefs.get('tm.key');
-export const COUNTRIES = [['ES', 'España'], ['PT', 'Portugal'], ['FR', 'Francia'], ['DE', 'Alemania'], ['GB', 'Reino Unido'], ['IT', 'Italia'], ['NL', 'Países Bajos'], ['US', 'Estados Unidos'], ['', 'Todos los países']];
+const keysOf = name => [fold(name), tokens(name).join(' ')].filter(Boolean);
 
-const sameArtist = (a, b) => fold(a) === fold(b) || (tokens(a).length > 0 && tokens(a).join(' ') === tokens(b).join(' '));
+// Fichero del servidor -> índice { nombre normalizado: [eventos] }
+export function indexConcerts(data) {
+  const idx = new Map();
+  for (const c of (data && data.events) || []) {
+    const [id, title, date, time, status, venue, city, country, url, acts] = c;
+    const ev = { id, title, date, time, status, venue, city, country, url, acts };
+    for (const k of new Set(acts.flatMap(keysOf))) (idx.get(k) || idx.set(k, []).get(k)).push(ev);
+  }
+  return idx;
+}
 
-// Respuesta de Ticketmaster -> [{ id, artist, title, date, time, status, venue, city, country, url, image }]
-// Solo eventos donde el artista figura de verdad entre los "attractions" (la búsqueda por texto trae ruido: tributos, homenajes…).
-export function parseEvents(json, artist) {
-  const list = (json && json._embedded && json._embedded.events) || [];
-  const out = [];
-  for (const e of list) {
-    const start = (e.dates && e.dates.start) || {};
-    const date = start.localDate;
-    if (!date) continue;
-    const code = ((e.dates.status || {}).code || '').toLowerCase();
-    if (code === 'cancelled' || code === 'canceled') continue;
-    const emb = e._embedded || {};
-    const acts = (emb.attractions || []).map(a => a.name);
-    if (!acts.some(n => sameArtist(n, artist))) continue;
-    const v = (emb.venues || [])[0] || {};
-    const img = (e.images || []).filter(i => i.url).sort((x, y) => Math.abs((x.width || 0) - 640) - Math.abs((y.width || 0) - 640))[0];
-    out.push({
-      id: e.id, artist, title: e.name || artist, date, time: (start.localTime || '').slice(0, 5),
-      status: code === 'postponed' || code === 'rescheduled' ? 'postponed' : code === 'offsale' ? 'offsale' : 'ok',
-      venue: v.name || '', city: (v.city || {}).name || '', country: (v.country || {}).countryCode || '', countryName: (v.country || {}).name || '',
-      url: e.url || '', image: img ? img.url : '',
-      others: acts.filter(n => !sameArtist(n, artist)).slice(0, 3)
-    });
+// Eventos de un artista (por nombre exacto, sin acentos ni mayúsculas; los tributos no coinciden)
+export function eventsFor(idx, artist) {
+  const seen = new Set(), out = [];
+  for (const k of keysOf(artist)) for (const e of idx.get(k) || []) {
+    if (seen.has(e.id)) continue;
+    seen.add(e.id);
+    out.push({ ...e, artist, others: e.acts.filter(n => !keysOf(n).some(x => keysOf(artist).includes(x))).slice(0, 3) });
   }
   return out;
 }
@@ -72,34 +62,4 @@ export function artistNames({ stats, apiAlbums, months, limit, topArtists, now =
   const by = {};
   for (const a of Object.values(apiAlbums || {})) by[a.artist] = (by[a.artist] || 0) + (a.points || 0);
   return Object.entries(by).filter(([, p]) => p > 0).sort((x, y) => y[1] - x[1]).slice(0, limit).map(([n]) => n);
-}
-
-// ---------- red ----------
-let chain = Promise.resolve();
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-async function request(artist, key) {
-  const q = new URLSearchParams({ apikey: key, keyword: artist, classificationName: 'music', size: '50', sort: 'date,asc', locale: '*',
-    startDateTime: new Date().toISOString().replace(/\.\d+Z$/, 'Z') });
-  const r = await fetch(`${API}?${q}`);
-  if (r.status === 401) { const e = new Error('Ticketmaster rechazó la clave. Revísala en Ajustes.'); e.code = 'key'; throw e; }
-  if (r.status === 429) { const e = new Error('Ticketmaster pide calma (demasiadas consultas). Prueba en un minuto.'); e.code = 'rate'; throw e; }
-  if (!r.ok) throw new Error('Ticketmaster respondió ' + r.status);
-  return r.json();
-}
-
-// -> eventos del artista (todos los países; el filtro se aplica después, así cambiar de país no vuelve a consultar). Con caché de 12 h.
-export function artistEvents(artist, { force = false } = {}) {
-  const ck = 'conc:' + fold(artist);
-  const run = async () => {
-    const c = await store.get(ck);
-    if (!force && c && Date.now() - c.at < TTL) return c.events;
-    const key = prefs.get('tm.key');
-    if (!key) throw Object.assign(new Error('Falta la clave de Ticketmaster.'), { code: 'key' });
-    await sleep(260);                                  // límite de Ticketmaster: 5 consultas por segundo
-    const events = parseEvents(await request(artist, key), artist);
-    await store.set(ck, { at: Date.now(), events });
-    return events;
-  };
-  return (chain = chain.then(run, run));
 }

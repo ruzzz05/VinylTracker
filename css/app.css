@@ -292,3 +292,6 @@ details.dt th, details.dt td { text-align: left; padding: 3px 4px; border-bottom
 .cdate b { font-size: 1.35rem; }
 .cdate span { font-size: .75rem; text-transform: uppercase; color: var(--acc2); font-weight: 700; }
 .cdate small { font-size: .65rem; color: var(--muted); text-transform: capitalize; }
+
+/* Portada de álbum con carga posterior: el contenedor no cuenta para la maquetación */
+.covwrap { display: contents; }

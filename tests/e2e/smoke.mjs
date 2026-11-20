@@ -59,9 +59,12 @@ await ctx.route('https://firestore.googleapis.com/**', r => {
 await ctx.route('https://open.spotify.com/oembed**', r => json(r, { title: 'Nuevo Disco', thumbnail_url: 'https://i.scdn.co/nuevo.jpg' }));
 await ctx.route('https://itunes.apple.com/**', r => {
   const u = new URL(r.request().url());
+  const term = u.searchParams.get('term') || '';
   if (u.searchParams.get('entity') === 'song') {
-    const term = u.searchParams.get('term') || '';
     return json(r, { results: [{ artistName: 'Nirvana', trackName: term.replace(/^Nirvana /, ''), collectionName: 'Nevermind', artworkUrl100: 'https://i.scdn.co/trk/100x100bb.jpg' }] });
+  }
+  if (u.searchParams.get('entity') === 'album' && /Delta/.test(term)) {
+    return json(r, { results: [{ artistName: 'Delta Goodrem', collectionName: 'Pure - Single', artworkUrl100: 'https://i.scdn.co/pure/100x100bb.jpg' }] });
   }
   return json(r, { results: [{ artistName: 'Artista Nuevo', collectionName: 'Nuevo Disco', releaseDate: '2024-05-01T00:00:00Z', primaryGenreName: 'Rap' }] });
 });
@@ -81,7 +84,8 @@ await ctx.route('https://api.discogs.com/**', r => {
 });
 // Imagen de 1x1 píxel para las fotos de prueba
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
-await ctx.route('https://i.scdn.co/**', r => r.fulfill({ status: 200, contentType: 'image/png', body: PNG }));
+let pureHits = 0;
+await ctx.route('https://i.scdn.co/**', r => { if (/\/pure\//.test(r.request().url())) pureHits++; return r.fulfill({ status: 200, contentType: 'image/png', body: PNG }); });
 await ctx.route('https://accounts.spotify.com/authorize**', r => {
   const u = new URL(r.request().url());
   r.fulfill({ status: 302, headers: { location: `${BASE}?code=CODE&state=${u.searchParams.get('state')}` } });
@@ -124,6 +128,14 @@ assert.equal(rows[0], 'Nevermind');
 await page.screenshot({ path: path.join(SHOTS, '2-ranking.png') });
 const owned = await page.$$eval('.row .own', els => els.length);
 assert.ok(owned >= 3, 'ULTRASWAN (csv, por id), Motomami (csv, por nombre) y OK Computer (nube): ' + owned);
+// Álbumes/singles sin portada guardada: se buscan solos (Delta Goodrem · Pure es un single)
+await page.waitForFunction(() => [...document.querySelectorAll('.row')].some(r => /Pure/.test(r.textContent) && r.querySelector('img.cover')), null, { timeout: 20000 });
+// y las portadas no se vuelven a descargar al cambiar de pestaña
+await page.waitForTimeout(800);
+const hits0 = pureHits;
+for (const t of ['coleccion', 'ajustes', 'ranking', 'coleccion', 'ranking']) { await page.click('[data-tab=' + t + ']'); await page.waitForTimeout(150); }
+await page.waitForFunction(() => [...document.querySelectorAll('.row')].some(r => /Pure/.test(r.textContent) && r.querySelector('img.cover')), null, { timeout: 5000 });
+assert.ok(pureHits - hits0 <= 1, 'la portada se descargó de nuevo al cambiar de pestaña: ' + (pureHits - hits0));
 await page.click('.seg >> text=Todo');
 assert.ok((await page.$$('.row')).length >= 5);
 
@@ -236,20 +248,13 @@ await page.screenshot({ path: path.join(SHOTS, '3d-comprados.png') });
 await page.click('.seg button:has-text("Sugeridos")');
 
 // ---------- Conciertos ----------
+const CONC = path.join(ROOT, '_site/data/concerts.json');
+const ce = (id, date, cc, city, acts) => [id, acts[0] + ' en directo', date, '21:00', 'ok', 'Sala X', city, cc, 'https://tm.example/' + id, acts];
 await page.click('[data-tab=conciertos]');
-await page.waitForSelector('text=Falta la clave de Ticketmaster');
-const tmEvent = (id, date, cc, city, acts) => ({ id, name: acts[0] + ' en directo', url: 'https://tm.example/' + id, dates: { start: { localDate: date, localTime: '21:00:00' }, status: { code: 'onsale' } },
-  _embedded: { attractions: acts.map(name => ({ name })), venues: [{ name: 'Sala X', city: { name: city }, country: { countryCode: cc, name: cc } }] } });
-const tmCalls = [];
-await ctx.route('https://app.ticketmaster.com/**', r => {
-  const u = new URL(r.request().url()); tmCalls.push(u.searchParams.get('keyword'));
-  if (u.searchParams.get('apikey') !== 'KEY123') return json(r, {}, 401);
-  return json(r, u.searchParams.get('keyword') === 'Nirvana'
-    ? { _embedded: { events: [tmEvent('e2', '2027-04-02', 'PT', 'Lisboa', ['Nirvana']), tmEvent('e1', '2027-03-12', 'ES', 'Madrid', ['Nirvana', 'Foo Fighters']), tmEvent('e0', '2027-03-01', 'ES', 'Bilbao', ['Nirvana Tribute'])] } }
-    : {});
-});
-await page.fill('input[placeholder^="Consumer Key"]', 'KEY123');
-await page.click('text=Guardar y buscar');
+await page.waitForSelector('text=Todavía no hay datos de conciertos');
+writeFileSync(CONC, JSON.stringify({ generated: new Date().toISOString(), countries: ['ES', 'PT'], events: [
+  ce('e2', '2027-04-02', 'PT', 'Lisboa', ['Nirvana']), ce('e1', '2027-03-12', 'ES', 'Madrid', ['Nirvana', 'Foo Fighters']), ce('e0', '2027-03-01', 'ES', 'Bilbao', ['Nirvana Tribute']) ] }));
+await page.click('text=Volver a mirar');
 await page.waitForSelector('.crow');
 assert.equal((await page.$$('.crow')).length, 1, 'por defecto solo España y sin el tributo');
 assert.match(await page.textContent('.crow'), /Madrid/);
@@ -257,8 +262,6 @@ assert.match(await page.textContent('.crow'), /Foo Fighters/);
 await page.selectOption('select[aria-label="País"]', '');
 assert.equal((await page.$$('.crow')).length, 2);
 assert.match(await page.textContent('#view'), /marzo de 2027/i);
-await page.waitForFunction(() => !/Buscando conciertos/.test(document.querySelector('#view').textContent), null, { timeout: 20000 });
-assert.ok(tmCalls.includes('Nirvana') && tmCalls.length >= 4, 'debe consultar a los artistas más escuchados: ' + tmCalls);
 assert.ok(!/NaN|undefined|null/.test(await page.textContent('#view')));
 await page.screenshot({ path: path.join(SHOTS, '3e-conciertos.png') });
 await page.selectOption('select[aria-label="País"]', 'ES');
