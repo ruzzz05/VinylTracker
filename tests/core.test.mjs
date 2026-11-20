@@ -155,3 +155,31 @@ test('relativeTime', () => {
   assert.equal(C.relativeTime(now - 3 * 86400000, now), 'hace 3 días');
   assert.equal(C.relativeTime(0, now), '');
 });
+
+test('albumKey ignora los espacios y la puntuación entre palabras (Diego 900 = Diego900)', () => {
+  assert.equal(C.albumKey('Diego 900', 'La Espalda del Sol'), C.albumKey('Diego900', 'La Espalda Del Sol'));
+  assert.equal(C.albumKey('C. Tangana', 'Avida Dollars'), C.albumKey('C.Tangana', 'avida dollars'));
+  assert.notEqual(C.albumKey('Diego 900', 'A'), C.albumKey('Diego 800', 'A'));
+  assert.equal(C.artistKey('Eladio Carrión'), C.artistKey('ELADIO CARRION'));
+});
+
+test('rekeyHistory migra claves antiguas (con espacios) y junta duplicados', () => {
+  const old = {
+    'diego 900|la espalda del sol': { artist: 'Diego 900', name: 'La Espalda del Sol', id: '', months: { '2026-01': { ms: 100, plays: 1 } }, tracks: ['a'] },
+    'diego900|la espalda del sol': { artist: 'Diego900', name: 'La Espalda Del Sol', id: '', months: { '2026-01': { ms: 50, plays: 1 } }, tracks: ['b'] }
+  };
+  const k = C.rekeyHistory(old);
+  assert.deepEqual(Object.keys(k), ['diego900|espaldasol']);                 // «la» y «del» no cuentan
+  assert.equal(k['diego900|espaldasol'].months['2026-01'].ms, 150);
+  const a = C.rekeyApi({ 'xy z|c': { artist: 'Xy Z', name: 'Disco', points: 3, saved: false }, 'xyz|c': { artist: 'XyZ', name: 'Disco', points: 5, saved: true } });
+  assert.equal(Object.keys(a).length, 1); assert.equal(Object.values(a)[0].points, 5); assert.equal(Object.values(a)[0].saved, true);
+});
+
+test('lector de zip: recupera los archivos completos de un zip CORTADO (sin directorio central, como el que da Spotify en flujo)', async () => {
+  const buf = readFileSync(new URL('./spotify-truncated.zip', import.meta.url));
+  const entries = await readSpotifyZip(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  assert.equal(entries.length, 50);                                                      // 30 de 2025 + 20 de 2026; el PDF cortado se descarta
+  assert.equal(entries[0].master_metadata_album_artist_name, 'Nirvana');
+  assert.equal(entries[49].master_metadata_album_artist_name, 'Radiohead');
+  await assert.rejects(() => readSpotifyZip(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]).buffer), /No parece un \.zip válido/);
+});

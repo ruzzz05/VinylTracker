@@ -3,7 +3,7 @@
 // buildStats(entries) reduce el export de Spotify a un resumen compacto (guardable en el móvil):
 // minutos por día, por hora y día de la semana, artistas, canciones, sesiones, saltos, plataformas…
 // Todas las fechas se calculan en la hora LOCAL del dispositivo.
-import { albumKey, tokens, windowStats, ownedIndex } from './core.js';
+import { albumKey, artistKey, windowStats, ownedIndex } from './core.js';
 
 export const STATS_VERSION = 1;
 const MIN_MS = 30000;                 // Spotify cuenta una reproducción a partir de 30 s
@@ -236,8 +236,8 @@ export function vinylStats({ history, collection, stats, months = 12, now = new 
   });
   for (const h of Object.values(history)) total += windowStats(h, months, now).minutes;
   for (const a of played) owned += a.minutes;
-  const ownedArtists = new Set(collection.map(a => tokens(a.artist).join(' ')));
-  const withoutVinyl = stats ? topArtists(stats, months, now, 60).filter(a => !ownedArtists.has(tokens(a.name).join(' '))).slice(0, 5) : [];
+  const ownedArtists = new Set(collection.map(a => artistKey(a.artist)));
+  const withoutVinyl = stats ? topArtists(stats, months, now, 60).filter(a => !ownedArtists.has(artistKey(a.name))).slice(0, 5) : [];
   const year = collection.map(a => { const h = history[albumKey(a.artist, a.name)]; return { ...a, minutes: h ? windowStats(h, 12, now).minutes : 0 }; });
   return {
     share: total ? owned / total : 0, ownedMinutes: owned, totalMinutes: total,
@@ -275,6 +275,11 @@ export function niceCeil(v) {
   if (v <= 0) return 1;
   const p = Math.pow(10, Math.floor(Math.log10(v))), f = v / p;
   return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
+}
+// Techo "redondo" para un eje de DURACIONES: en minutos (10, 20, 50, 100…) o en horas (10 h, 20 h, 50 h, 100 h…)
+export function niceCeilMs(ms) {
+  const min = ms / 60000;
+  return min < 120 ? niceCeil(min) * 60000 : niceCeil(min / 60) * 3600000;
 }
 export const fmtAxis = ms => { const m = ms / 60000; return m < 120 ? `${Math.round(m)} min` : `${Math.round(m / 60)} h`; };
 

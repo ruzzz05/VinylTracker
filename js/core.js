@@ -16,7 +16,9 @@ export function cleanAlbum(name) {
 
 export const tokens = s => (fold(s).match(/[a-z0-9]+/g) || []).filter(t => !STOP.has(t));
 
-export const albumKey = (artist, album) => tokens(artist).join(' ') + '|' + tokens(cleanAlbum(album)).join(' ');
+// Sin espacios entre palabras: así "Diego 900" y "Diego900" (o "C. Tangana" y "C.Tangana") son el mismo artista
+export const artistKey = artist => tokens(artist).join('');
+export const albumKey = (artist, album) => artistKey(artist) + '|' + tokens(cleanAlbum(album)).join('');
 
 export function overlap(needle, haystack) {
   if (!needle.length) return 0;
@@ -342,6 +344,24 @@ export function mergeHistory(a, b) {
     const months = { ...o.months };
     for (const [m, c] of Object.entries(h.months)) months[m] = months[m] ? { ms: months[m].ms + c.ms, plays: months[m].plays + c.plays } : { ...c };
     out[k] = { ...o, id: o.id || h.id, months, tracks: [...new Set([...(o.tracks || []), ...(h.tracks || [])])].slice(0, 60) };
+  }
+  return out;
+}
+
+// Las claves guardadas por versiones anteriores llevaban espacios: se recalculan al cargar
+export function rekeyHistory(h) {
+  const out = {};
+  for (const v of Object.values(h || {})) {
+    const k = albumKey(v.artist, v.name);
+    out[k] = out[k] ? mergeHistory({ [k]: out[k] }, { [k]: v })[k] : v;
+  }
+  return out;
+}
+export function rekeyApi(a) {
+  const out = {};
+  for (const v of Object.values(a || {})) {
+    const k = albumKey(v.artist, v.name), o = out[k];
+    out[k] = o ? { ...o, points: Math.max(o.points || 0, v.points || 0), saved: o.saved || v.saved } : v;
   }
   return out;
 }

@@ -218,3 +218,11 @@ test('parseNowPlaying', () => {
   assert.equal(L.parseNowPlaying(null), null);
   assert.equal(L.parseNowPlaying({ ...j, currently_playing_type: 'episode' }), null);
 });
+
+test('niceCeilMs: ejes con números redondos en minutos u horas', () => {
+  assert.equal(S.niceCeilMs(74 * 3600000), 100 * 3600000);              // 74 h -> 100 h (50 h a mitad)
+  assert.equal(S.niceCeilMs((6 * 60 + 50) * 60000), 10 * 3600000);        // 6 h 50 min -> 10 h
+  assert.equal(S.niceCeilMs(37 * 60000), 50 * 60000);                     // 37 min -> 50 min
+  assert.equal(S.niceCeilMs(0), 1 * 60000);
+  assert.equal(S.fmtAxis(S.niceCeilMs(74 * 3600000)), '100 h'); assert.equal(S.fmtAxis(S.niceCeilMs(74 * 3600000) / 2), '50 h');
+});

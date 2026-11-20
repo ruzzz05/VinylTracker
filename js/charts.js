@@ -1,12 +1,12 @@
 // Gráficos sencillos en HTML/CSS (responsive, accesibles). Marcas finas, esquinas de 4 px en el extremo del dato,
 // separación de 2 px, cuadrícula recesiva, etiquetas solo donde importan y tooltip en cada marca.
 import { h, bindTip } from './dom.js';
-import { niceCeil } from './stats.js';
+import { niceCeilMs } from './stats.js';
 
 // Columnas sobre una base común. data: [{label, title, value}]; fmt(valor) -> texto; axis(valor) -> texto del eje
 export function columnChart({ data, fmt, axis, highlight = -1, labelEvery = 1, height = 120 }) {
   const max = Math.max(0, ...data.map(d => d.value));
-  const top = niceCeil(max || 1);
+  const top = niceCeilMs(max || 60000);
   const maxIdx = max > 0 ? data.findIndex(d => d.value === max) : -1;
   const bars = data.map((d, i) => {
     const pct = d.value > 0 ? Math.max(2 / height * 100, d.value / top * 100) : 0;

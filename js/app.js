@@ -12,7 +12,7 @@ import { buildStats, mergeStats } from './stats.js';
 import * as L from './live.js';
 import { artistsView, tracksView, statsView } from './statsview.js';
 
-const VERSION = '1.4.2';
+const VERSION = '1.4.3';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -85,14 +85,14 @@ const rankingList = () => C.buildRanking({ history: state.effHistory, api: state
   .map(r => ({ ...r, owned: C.isOwned(r, state.owned), offers: C.matchStores(r, state.storeIndex) }));
 
 async function loadAll() {
-  state.history = await store.get('history', {});
+  state.history = C.rekeyHistory(await store.get('history', {}));
   state.historyInfo = await store.get('historyInfo', null);
   state.stats = await store.get('stats', null);
   const lv = await store.get('live', null);
   if (lv) state.live = { ...L.emptyLive(), ...lv };
   recompute();
   const api = await store.get('api', null);
-  if (api) { state.apiAlbums = api.albums; state.apiAt = api.at; }
+  if (api) { state.apiAlbums = C.rekeyApi(api.albums); state.apiAt = api.at; }
   try { state.base = await collection.loadBase(); } catch (e) { toast('No se pudo leer tu colección de mi-app: ' + e.message, true); }
   const ex = await fb.cachedExtras();
   if (ex) { state.extras = ex.albums; state.extrasAt = ex.at; }

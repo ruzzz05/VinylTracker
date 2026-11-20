@@ -8,6 +8,7 @@ data/stores.json
 # Datos personales y credenciales: nunca al repositorio (es público)
 *.zip
 !tests/spotify-sample.zip
+!tests/spotify-truncated.zip
 Streaming_History*
 my_spotify_data*
 .DS_Store
