@@ -46,7 +46,13 @@ await ctx.route('https://identitytoolkit.googleapis.com/**', r => json(r, { idTo
 const mk = (id, artist, name) => ({ id, artist, name, image: 'https://i.scdn.co/' + id + '.jpg', tags: ['rock'], url: 'https://open.spotify.com/album/' + id });
 let cloud = JSON.stringify({ albums: [mk('AAAAAAAAAAAAAAAAAAAAAA', 'Radiohead', 'OK Computer')] });
 let patched = null;
+const vt = new Map();           // documentos vt-… de la copia en la nube
 await ctx.route('https://firestore.googleapis.com/**', r => {
+  const m = /\/vinilos\/(vt-[^?]+)/.exec(r.request().url());
+  if (m) {
+    if (r.request().method() === 'PATCH') { vt.set(m[1], JSON.parse(r.request().postData()).fields); return json(r, {}); }
+    return vt.has(m[1]) ? json(r, { fields: vt.get(m[1]) }) : json(r, {}, 404);
+  }
   if (r.request().method() === 'PATCH') { patched = JSON.parse(r.request().postData()); cloud = patched.fields.json.stringValue; return json(r, {}); }
   return json(r, { fields: { updatedAt: { integerValue: '1' }, json: { stringValue: cloud } } });
 });
@@ -197,6 +203,16 @@ await page.waitForSelector('.rescard >> text=Añadido');
 await page.click('.sheet >> text=Cerrar');
 await page.waitForSelector('.row.wrow:has-text("Motomami")');
 assert.match(await page.textContent('#view'), /Edición/);
+// copia en la nube: la lista de deseos se sube sola (comprimida) y se puede recuperar
+await page.waitForFunction(() => true);
+await page.waitForTimeout(5600);
+assert.ok(vt.has('vt-wish') && vt.has('vt-wish-0'), 'la lista de deseos debe subirse a Firestore');
+assert.ok(!JSON.stringify([...vt]).includes('tok'), 'no se suben tokens');
+// borrar los datos locales de deseos y recargar: se recuperan de la nube
+await page.evaluate(() => new Promise(res => { const r = indexedDB.open('vinyltracker', 1); r.onsuccess = () => { const t = r.result.transaction('kv', 'readwrite'); t.objectStore('kv').delete('wishlist'); t.oncomplete = () => res(); }; }));
+await page.reload();
+await page.waitForSelector('.row.wrow:has-text("Pure")');
+await page.waitForSelector('.row.wrow:has-text("Motomami")');
 // aviso: Pure pasa a estar en stock en la tienda
 writeStores(1);
 await page.reload();

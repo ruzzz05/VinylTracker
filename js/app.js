@@ -12,11 +12,12 @@ import { buildStats, mergeStats } from './stats.js';
 import * as L from './live.js';
 import { artistsView, tracksView, statsView } from './statsview.js';
 import * as W from './wishlist.js';
+import * as cloud from './cloud.js';
 import * as wv from './wishview.js';
 import { concertsView, cancelConcerts } from './concertsview.js';
 import { trackCover, knownCovers } from './covers.js';
 
-const VERSION = '1.5.1';
+const VERSION = '1.6.0';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -74,7 +75,7 @@ const state = {
   csvAt: 0, syncing: false, syncError: '',
   prices: new Map(),          // key -> { discogs }
   filter: 'todos', search: '',
-  wish: [], buyView: prefs.get('buyView', 'sugeridos'), scanStop: null, wishBusy: false
+  cloudAt: 0, cloudError: '', cloudBusy: false, wish: [], buyView: prefs.get('buyView', 'sugeridos'), scanStop: null, wishBusy: false
 };
 
 // Lo que ven las pantallas es lo importado MÁS lo recogido en vivo
@@ -267,7 +268,7 @@ async function liveRefresh() {
     state.live = { ...live, at: Date.now() };
     state.liveError = '';
     await store.set('live', state.live);
-    if (fresh.length) { recompute(); if (state.tab === 'ranking') render(); }
+    if (fresh.length) { scheduleCloud('live'); recompute(); if (state.tab === 'ranking') render(); }
   } catch (e) { state.liveError = e.message; }
   finally { state.liveBusy = false; updateLiveUi(); }
 }
@@ -501,7 +502,62 @@ function vBuy() {
 function vConcerts() { return concertsView({ state, onSettings: () => go('ajustes') }); }
 
 // ---------- Deseos: contexto para las pantallas, guardado y avisos ----------
-const saveWish = () => store.set('wishlist', state.wish);
+const saveWish = () => { scheduleCloud('wish'); return store.set('wishlist', state.wish); };
+
+// ---------- Copia en la nube (Firestore de mi-app; solo el dueño) ----------
+const cloudSource = { wish: () => state.wish, live: () => state.live, history: () => ({ history: state.history, info: state.historyInfo, stats: state.stats }), prefs: () => cloud.collectPrefs() };
+const dirty = new Set();
+let cloudTimer;
+function scheduleCloud(...keys) {
+  if (!cloud.available()) return;
+  keys.forEach(k => dirty.add(k)); dirty.add('prefs');
+  clearTimeout(cloudTimer);
+  cloudTimer = setTimeout(cloudPush, 5000);
+}
+async function cloudPush({ all = false } = {}) {
+  if (!cloud.available() || state.cloudBusy) return;
+  state.cloudBusy = true; state.cloudError = '';
+  const keys = all ? cloud.KEYS : [...dirty]; dirty.clear();
+  try {
+    for (const k of keys) {
+      const data = cloudSource[k]();
+      if (k === 'history' && !state.stats && !Object.keys(state.history).length) continue;      // nada que subir
+      if (k === 'live' && !state.live.entries.length) continue;
+      await cloud.pushKey(k, data);
+    }
+    state.cloudAt = Date.now();
+  } catch (e) { state.cloudError = e.message; keys.forEach(k => dirty.add(k)); }
+  finally { state.cloudBusy = false; refreshCloudCard(); }
+}
+
+// Baja lo que haya en la nube y lo junta con lo local (en un móvil nuevo recupera todo). Luego sube lo que falte.
+async function cloudPull() {
+  if (!cloud.available() || state.cloudBusy) return;
+  state.cloudBusy = true; state.cloudError = '';
+  try {
+    const w = await cloud.pullKey('wish');
+    if (w) { state.wish = cloud.mergeWish(state.wish, w.data); await store.set('wishlist', state.wish); }
+    const lv = await cloud.pullKey('live');
+    if (lv && lv.data && Array.isArray(lv.data.entries)) {
+      state.live = { ...L.mergeLive(state.live, lv.data.entries, state.stats ? state.stats.total.lastTs : 0).live, at: state.live.at }; await store.set('live', state.live);
+    }
+    const hi = await cloud.pullKey('history');
+    if (hi && hi.at > cloud.localAt('history') && hi.data && hi.data.stats && !dirty.has('history')) {      // lo local sin subir manda
+      const d = hi.data;
+      state.history = d.history || {}; state.historyInfo = d.info || null; state.stats = d.stats;
+      await store.set('history', state.history); await store.set('historyInfo', state.historyInfo); await store.set('stats', state.stats);
+      state.live = L.pruneLive(state.live, state.stats.total.lastTs); await store.set('live', state.live);
+    }
+    const pf = await cloud.pullKey('prefs');
+    if (pf && pf.data) for (const [k, v] of Object.entries(pf.data)) if (cloud.PREF_KEYS.includes(k) && prefs.get(k, '') === '') prefs.set(k, v);
+    recompute(); updateBadge();
+    state.cloudBusy = false;
+    await cloudPush({ all: true });                 // sube lo local que la nube no tenga
+    state.cloudAt = Date.now();
+    if (state.tab !== 'ajustes') render();           // en Ajustes no se repinta (se perdería el archivo elegido): solo la tarjeta
+  } catch (e) { state.cloudError = e.message; }
+  finally { state.cloudBusy = false; refreshCloudCard(); }
+}
 const wishCtx = {
   state, toast, showPanel, coverEl, saveWish,
   closeSheet: () => closeSheet(),
@@ -609,6 +665,18 @@ async function openSheet(r) {
 }
 
 // ---------- Ajustes ----------
+// Tarjeta «Copia en la nube» de Ajustes
+function cloudCard() {
+  return h('div', { class: 'card', id: 'cloud-card' }, h('h3', null, 'Copia en la nube'),
+    cloud.available()
+      ? [h('p', { class: 'muted' }, 'Tu lista de deseos y comprados, el registro en vivo, el historial importado y los ajustes se guardan en tu Firebase de mi-app. Así sobreviven a borrar la app: al iniciar sesión se recuperan solos. Los tokens y claves (Spotify, Discogs, Ticketmaster) NO se suben.'),
+        state.cloudError ? h('p', { class: 'muted bad' }, state.cloudError) : h('p', { class: 'own' }, state.cloudBusy ? 'Sincronizando…' : state.cloudAt ? '✓ Sincronizado ' + when(state.cloudAt) : 'Pendiente de sincronizar'),
+        state.cloudError && /403/.test(state.cloudError) ? h('p', { class: 'muted' }, 'Falta una regla en Firestore (consola de Firebase → Firestore → Reglas): permite leer y escribir en /vinilos/{doc} a tu UID de dueño, como ya haces con vinilos/coleccion.') : null,
+        h('div', { class: 'btns' }, h('button', { class: 'btn sec', disabled: state.cloudBusy, onclick: () => cloudPull() }, 'Sincronizar ahora'))]
+      : h('p', { class: 'muted' }, 'Solo la cuenta del dueño puede guardar la copia en la nube.'));
+}
+function refreshCloudCard() { const c = $('#cloud-card'); if (c) c.replaceWith(cloudCard()); }
+
 function field(label, input) { return h('div', null, h('label', null, label), input); }
 
 function vSettings() {
@@ -626,9 +694,11 @@ function vSettings() {
       : [field('Usuario', u), field('Contraseña', p),
         h('button', { class: 'btn', onclick: async e => {
           e.target.disabled = true;
-          try { await fb.login(u.value, p.value); await syncExtras(); } catch (err) { toast(err.message, true); }
+          try { await fb.login(u.value, p.value); await syncExtras(); cloudPull(); } catch (err) { toast(err.message, true); }
           render();
         } }, 'Iniciar sesión')]));
+
+  if (fb.isLoggedIn()) root.append(cloudCard());
 
   // Spotify
   const cid = h('input', { type: 'text', value: spotify.clientId(), autocapitalize: 'none', 'aria-label': 'Client ID' });
@@ -736,6 +806,7 @@ async function importHistory(files) {
     await store.set('history', into); await store.set('historyInfo', info); await store.set('stats', stats);
     state.history = into; state.historyInfo = info; state.stats = stats;
     state.live = L.pruneLive(state.live, stats.total.lastTs); await store.set('live', state.live); recompute();
+    scheduleCloud('history', 'live');
     toast(info.basic ? `Importado: ${S_fmt(stats.total.plays)} reproducciones (sin álbumes: es el paquete básico)` : `Historial importado: ${info.albums} álbumes`);
     if (info.basic && state.rankView === 'albums') { state.rankView = 'stats'; prefs.set('rankView', 'stats'); }
     go('ranking');
@@ -762,6 +833,7 @@ async function boot() {
   render();
   updateBadge();
   wishCheck();
+  cloudPull();
   setInterval(() => { if (document.visibilityState === 'visible') wishCheck(); }, 30 * 60000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wishCheck(); });
   startLive();
