@@ -18,7 +18,7 @@ import { concertsView } from './concertsview.js';
 import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 
-const VERSION = '1.7.2';
+const VERSION = '1.7.3';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -770,6 +770,7 @@ function vSettings() {
   // Datos
   root.append(h('div', { class: 'card' }, h('h3', null, 'Datos'),
     h('p', { class: 'muted' }, `VinylTracker ${VERSION}. Todo se guarda en este dispositivo. Tiendas: Universal Music Online y Apparell (actualizadas a diario); Fnac no permite consultas automáticas.`),
+    h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: checkUpdate }, 'Buscar actualización')),
     h('button', { class: 'btn danger', onclick: async () => {
       if (!confirm('¿Borrar todos los datos de VinylTracker de este dispositivo?')) return;
       await store.clearAll();
@@ -790,6 +791,18 @@ async function readZipFile(f) {
     if (head[0] !== 0x50 || head[1] !== 0x4b) throw new Error(`«${f.name}» (${mb} MB) no empieza como un zip. ¿Es el archivo de Spotify tal cual, sin descomprimir ni renombrar?`);
     throw new Error(`El zip (${mb} MB) está dañado o incompleto y no pude recuperar ningún archivo de música. Descárgalo otra vez de Spotify.`);
   }
+}
+
+// Pide al navegador que compruebe si hay una versión nueva; si la hay, la descarga y la app se recarga sola
+async function checkUpdate() {
+  try {
+    const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+    if (!reg) return toast('Este navegador no permite comprobar actualizaciones.', true);
+    toast('Buscando actualización…');
+    await reg.update();
+    if (reg.installing || reg.waiting) toast('Descargando la nueva versión… la app se recargará sola.');
+    else toast(`Ya tienes la última versión (${VERSION}).`);
+  } catch (e) { toast('No se pudo comprobar: ' + e.message + '. ¿Hay conexión?', true); }
 }
 
 async function importHistory(files) {
@@ -833,7 +846,13 @@ async function refreshApi() {
 
 // ---------- arranque ----------
 async function boot() {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    // Si llega una versión nueva, la app se recarga sola una vez (así no hace falta abrirla dos veces para ver el cambio)
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloaded) { reloaded = true; location.reload(); } });
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
   await loadAll();
   markTab();
   render();

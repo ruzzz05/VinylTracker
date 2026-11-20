@@ -403,6 +403,9 @@ for (const [file, texto] of [['texto.zip', /no empieza como un zip/], ['vacio.zi
   await p4.click('text=Importar');
   await p4.waitForFunction(re => new RegExp(re).test(document.querySelector('#toast')?.textContent || ''), texto.source);
 }
+// Botón de actualizar: sin versión nueva dice que ya tienes la última
+await p4.click('text=Buscar actualización');
+await p4.waitForFunction(() => /última versión/.test(document.querySelector('#toast')?.textContent || ''));
 await p4.setInputFiles('input[type=file]', path.join(ROOT, 'tests', 'spotify-truncated.zip'));    // cortado, como el de Spotify
 await p4.click('text=Importar');
 await p4.waitForFunction(() => /Historial importado: 2 álbumes/.test(document.querySelector('#toast')?.textContent || ''));
