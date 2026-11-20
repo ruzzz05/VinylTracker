@@ -44,7 +44,9 @@ page.on('console', m => { if (m.type() === 'error') console.log('console.error:'
 await ctx.route('https://ruzzz05.github.io/mi-app/apps/vinilos/musica.csv', r => r.fulfill({ status: 200, contentType: 'text/csv', headers: { 'access-control-allow-origin': '*' }, body: CSV }));
 await ctx.route('https://identitytoolkit.googleapis.com/**', r => json(r, { idToken: 'tok', refreshToken: 'ref', localId: OWNER, expiresIn: '3600' }));
 const mk = (id, artist, name) => ({ id, artist, name, image: 'https://i.scdn.co/' + id + '.jpg', tags: ['rock'], url: 'https://open.spotify.com/album/' + id });
-let cloud = JSON.stringify({ albums: [mk('AAAAAAAAAAAAAAAAAAAAAA', 'Radiohead', 'OK Computer')] });
+// Un disco en la nube con formato no válido (portada http): debe avisarse y NO borrarse al añadir otro
+const malo = { ...mk('BBBBBBBBBBBBBBBBBBBBBB', 'Roto', 'Disco roto'), image: 'http://inseguro/x.jpg' };
+let cloud = JSON.stringify({ albums: [mk('AAAAAAAAAAAAAAAAAAAAAA', 'Radiohead', 'OK Computer'), malo] });
 let patched = null;
 const vt = new Map();           // documentos vt-… de la copia en la nube
 await ctx.route('https://firestore.googleapis.com/**', r => {
@@ -271,6 +273,12 @@ await page.click('[data-tab=coleccion]');
 await page.waitForSelector('.wall .tile');
 assert.equal((await page.$$('.wall .tile')).length, 3);
 assert.match(await page.textContent('.counter'), /3 vinilos/);
+// El disco no válido no se muestra, pero se avisa y se explica
+assert.match(await page.textContent('#view'), /1 disco en la nube que no se puede mostrar/);
+await page.click('text=Ver cuáles y por qué');
+await page.waitForSelector('.sheet .panel');
+assert.match(await page.textContent('.sheet .panel'), /Disco roto.*Roto|portada no es una dirección https válida/s);
+await page.click('.sheet >> text=Cerrar');
 // Menú de la colección: sin recuento ni valor de Discogs, con el punto de sincronización
 assert.equal((await page.textContent('#status')).trim(), '', 'la cabecera no debe enseñar el recuento');
 assert.ok(!/en mi-app|añadidos|Valor en Discogs|Calcular valor/.test(await page.textContent('#view')), 'sobra texto en el menú de la colección');
@@ -309,6 +317,7 @@ await page.click('.sheet >> text=Guardar disco');
 await page.waitForSelector('.sheet', { state: 'hidden' });
 assert.ok(patched && patched.fields.json.stringValue.includes('Nuevo Disco') && patched.fields.json.stringValue.includes('Artista Nuevo'), 'no se escribió en Firestore');
 assert.ok(patched.fields.json.stringValue.includes('OK Computer'), 'se pisó lo que había en la nube');
+assert.ok(patched.fields.json.stringValue.includes('Disco roto'), 'al añadir se borró un disco que la app no sabía mostrar');
 await page.waitForSelector('.wall .tile');
 assert.equal((await page.$$('.wall .tile')).length, 4);
 await page.screenshot({ path: path.join(SHOTS, '6b-tras-anadir.png') });

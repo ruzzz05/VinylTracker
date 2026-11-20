@@ -267,10 +267,28 @@ export function newAlbum({ spotifyUrl, name, artist, image, tags, year, now }) {
 }
 
 const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
-export function validStored(a) {
-  return isObj(a) && typeof a.id === 'string' && new RegExp('^' + SPOTIFY_ID + '$').test(a.id) &&
-    typeof a.artist === 'string' && !!a.artist && typeof a.name === 'string' && !!a.name &&
-    validImage(a.image) && Array.isArray(a.tags) && a.url === 'https://open.spotify.com/album/' + a.id;
+// Por qué un disco guardado en la nube no se acepta ('' = es válido)
+export function whyInvalid(a) {
+  if (!isObj(a)) return 'no es un disco';
+  if (typeof a.id !== 'string' || !new RegExp('^' + SPOTIFY_ID + '$').test(a.id)) return 'su id de Spotify no es válido';
+  if (typeof a.artist !== 'string' || !a.artist) return 'no tiene artista';
+  if (typeof a.name !== 'string' || !a.name) return 'no tiene nombre';
+  if (!validImage(a.image)) return 'su portada no es una dirección https válida';
+  if (!Array.isArray(a.tags)) return 'sus estilos no están bien guardados';
+  if (a.url !== 'https://open.spotify.com/album/' + a.id) return 'su enlace de Spotify no coincide con el id';
+  return '';
+}
+export const validStored = a => !whyInvalid(a);
+
+// Separa los discos del documento de la nube: válidos, no válidos (con el motivo) y todos tal cual (raw).
+// corrupt = el texto no se puede leer como JSON (en ese caso NO se debe reescribir el documento).
+export function splitExtras(text) {
+  let v;
+  try { v = JSON.parse(text); } catch (e) { return { ok: [], bad: [], raw: [], corrupt: typeof text === 'string' && text.trim() !== '' }; }
+  const raw = isObj(v) && Array.isArray(v.albums) ? v.albums : [];
+  const ok = [], bad = [];
+  for (const a of raw) { const why = whyInvalid(a); if (why) bad.push({ album: a, why }); else ok.push(a); }
+  return { ok, bad, raw, corrupt: false };
 }
 
 // Lo que viene de la nube: solo se aceptan discos bien formados

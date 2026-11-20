@@ -196,3 +196,15 @@ test('el id de un deseo conserva el formato antiguo (los deseos guardados no se 
   assert.equal(wishId({ kind: 'release', discogsId: 123, artist: 'x', name: 'y' }), 'r123');
   assert.notEqual(C.albumKey('Diego 900', 'La Espalda del Sol'), C.legacyAlbumKey('Diego 900', 'La Espalda del Sol'));
 });
+
+test('splitExtras separa discos válidos de no válidos (con el motivo) y conserva todo tal cual', () => {
+  const id = '2Gzdlis2gby7peCvJ0Poif';
+  const good = { id, artist: 'A', name: 'B', image: 'https://x/y.jpg', tags: [], url: 'https://open.spotify.com/album/' + id };
+  const text = JSON.stringify({ albums: [good, { ...good, image: 'http://x/y.jpg' }, { ...good, id: 'corto', url: '' }, { ...good, name: '' }, { ...good, tags: 'rap' }, { ...good, url: 'https://otro' }, 'basura'] });
+  const r = C.splitExtras(text);
+  assert.equal(r.ok.length, 1); assert.equal(r.raw.length, 7); assert.equal(r.bad.length, 6);
+  assert.deepEqual(r.bad.map(b => b.why), ['su portada no es una dirección https válida', 'su id de Spotify no es válido', 'no tiene nombre', 'sus estilos no están bien guardados', 'su enlace de Spotify no coincide con el id', 'no es un disco']);
+  assert.equal(C.parseExtras(text).length, 1);                              // parseExtras sigue igual
+  assert.equal(C.splitExtras('{{no json').corrupt, true);
+  assert.equal(C.splitExtras('').corrupt, false); assert.deepEqual(C.splitExtras(JSON.stringify({ albums: [] })).raw, []);
+});

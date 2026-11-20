@@ -1,7 +1,7 @@
 // Firebase por REST (sin SDK): login con usuario/contraseña y lectura de tu colección en Firestore.
 // Misma cuenta y mismo proyecto que mi-app. Nunca se guarda la contraseña, solo el token de renovación.
 import { config } from './config.js';
-import { isOwner as isOwnerUid, parseExtras } from './core.js';
+import { isOwner as isOwnerUid, splitExtras } from './core.js';
 import * as store from './storage.js';
 import { prefs } from './storage.js';
 
@@ -66,40 +66,49 @@ async function fetchDoc() {
   return f.json && typeof f.json.stringValue === 'string' ? { json: f.json.stringValue } : null;
 }
 
-// Discos añadidos desde mi-app (documento vinilos/coleccion). Devuelve [] si no hay ninguno.
+// Resumen de un disco no válido (para enseñarlo y guardarlo en la caché)
+const badInfo = list => list.map(b => ({ artist: String((b.album && b.album.artist) || ''), name: String((b.album && b.album.name) || ''), why: b.why }));
+
+// Discos añadidos desde mi-app (documento vinilos/coleccion). Devuelve { albums, bad, at, fromCache }.
+// `bad` = los que hay en la nube pero no se pueden mostrar (con el motivo); nunca se borran.
 export async function readExtras({ force = false } = {}) {
   const cached = await store.get('extras');
-  if (!force && cached && Date.now() - cached.at < TTL) return { albums: cached.albums, at: cached.at, fromCache: true };
+  if (!force && cached && Date.now() - cached.at < TTL) return { albums: cached.albums, bad: cached.bad || [], at: cached.at, fromCache: true };
   const doc = await fetchDoc();
-  const albums = doc ? parseExtras(doc.json) : [];
+  const sp = doc ? splitExtras(doc.json) : { ok: [], bad: [], corrupt: false };
+  const bad = badInfo(sp.bad);
+  if (sp.corrupt) bad.push({ artist: '', name: '(todo el documento)', why: 'no se puede leer: está dañado' });
   const at = Date.now();
-  await store.set('extras', { at, albums });
-  return { albums, at, fromCache: false };
+  await store.set('extras', { at, albums: sp.ok, bad });
+  return { albums: sp.ok, bad, at, fromCache: false };
 }
 
 export const uid = () => prefs.get('fb.uid');
 export const isOwner = () => isLoggedIn() && isOwnerUid(uid(), config.ownerUid);
 
-// Solo el dueño. Lee el documento justo antes de escribir (así no se pisa lo de otro dispositivo);
-// las reglas de Firestore son las que impiden de verdad que otra cuenta escriba.
+// Solo el dueño. Lee el documento justo antes de escribir (así no se pisa lo de otro dispositivo) y conserva TODO lo
+// que hubiera, también lo que esta app no sabe mostrar. Las reglas de Firestore impiden de verdad que otra cuenta escriba.
 export async function addAlbum(album) {
   if (!isOwner()) throw new Error('Solo el dueño puede añadir discos.');
   const doc = await fetchDoc();
-  const list = doc ? parseExtras(doc.json) : [];
-  const next = list.some(a => a.id === album.id) ? list : list.concat(album);
+  const sp = doc ? splitExtras(doc.json) : { ok: [], bad: [], raw: [], corrupt: false };
+  if (sp.corrupt) throw new Error('El documento de discos en la nube está dañado; no lo sobrescribo para no perder nada.');
+  const exists = sp.raw.some(a => a && a.id === album.id);
+  const nextRaw = exists ? sp.raw : sp.raw.concat(album);
   const at = Date.now();
-  const body = { fields: { updatedAt: { integerValue: String(at) }, json: { stringValue: JSON.stringify({ albums: next }) } } };
+  const body = { fields: { updatedAt: { integerValue: String(at) }, json: { stringValue: JSON.stringify({ albums: nextRaw }) } } };
   const r = await fetch(DOC_URL + '?updateMask.fieldPaths=updatedAt&updateMask.fieldPaths=json', {
     method: 'PATCH', headers: { Authorization: 'Bearer ' + await idToken(), 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   });
   if (!r.ok) throw new Error(r.status === 403 ? 'Firestore respondió 403 (tu cuenta no es la del dueño o faltan las reglas)' : 'Firestore respondió ' + r.status);
-  await store.set('extras', { at, albums: next });
-  return { albums: next, at };
+  const next = exists ? sp.ok : sp.ok.concat(album), bad = badInfo(sp.bad);
+  await store.set('extras', { at, albums: next, bad });
+  return { albums: next, bad, at };
 }
 
 export async function cachedExtras() {
   const c = await store.get('extras');
-  return c ? { albums: c.albums, at: c.at } : null;
+  return c ? { albums: c.albums, bad: c.bad || [], at: c.at } : null;
 }
 
 // ---------- Documentos genéricos de la copia en la nube (colección vinilos, documentos vt-…) ----------
