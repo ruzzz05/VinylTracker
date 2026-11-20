@@ -17,7 +17,7 @@ import * as wv from './wishview.js';
 import { concertsView, cancelConcerts } from './concertsview.js';
 import { trackCover, knownCovers } from './covers.js';
 
-const VERSION = '1.6.0';
+const VERSION = '1.6.1';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
