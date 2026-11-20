@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from vinyl_tracker import discogs, report, spotify_history, stores
+from vinyl_tracker import concerts, discogs, report, spotify_history, stores
 from vinyl_tracker.models import Album, StoreHit
 from vinyl_tracker.text import album_key, clean_album
 
@@ -85,3 +85,43 @@ class ReportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConcertTests(unittest.TestCase):
+    @staticmethod
+    def ev(i, date="2027-03-12", name="X en directo", acts=("X",), code="onsale", cc="ES"):
+        return {"id": i, "name": name, "url": "https://tm/" + i,
+                "dates": {"start": {"localDate": date, "localTime": "21:00:00"}, "status": {"code": code}},
+                "_embedded": {"attractions": [{"name": a} for a in acts],
+                              "venues": [{"name": "Sala", "city": {"name": "Madrid"}, "country": {"countryCode": cc}}]}}
+
+    def test_compact_filters_cancelled_and_no_artist(self):
+        self.assertEqual(concerts.compact(self.ev("a"))[:5], ["a", "X en directo", "2027-03-12", "21:00", "ok"])
+        self.assertIsNone(concerts.compact(self.ev("b", code="cancelled")))
+        self.assertIsNone(concerts.compact(self.ev("c", acts=())))
+        self.assertEqual(concerts.compact(self.ev("d", code="rescheduled"))[4], "postponed")
+
+    def test_window_splits_when_over_1000_and_dedups(self):
+        calls = []
+
+        def fake(url, params):
+            calls.append(params)
+            span = (datetime.strptime(params["endDateTime"], "%Y-%m-%dT%H:%M:%SZ")
+                    - datetime.strptime(params["startDateTime"], "%Y-%m-%dT%H:%M:%SZ")).days
+            if span > 100:      # ventana grande: demasiados resultados
+                return {"page": {"totalElements": 1500, "totalPages": 5}, "_embedded": {"events": [self.ev("big")]}}
+            return {"page": {"totalElements": 2, "totalPages": 1}, "_embedded": {"events": [self.ev("s%d" % span), self.ev("dup")]}}
+
+        out = concerts.build("K", ["ES", "PT"], days=365, now=datetime(2026, 11, 20, tzinfo=timezone.utc), get=fake, sleep=lambda s: None, log=lambda m: None)
+        ids = [e[0] for e in out["events"]]
+        self.assertEqual(len(ids), len(set(ids)))              # sin repetidos (ni entre países)
+        self.assertIn("dup", ids)
+        self.assertEqual(out["countries"], ["ES", "PT"])
+        self.assertTrue(all(c["apikey"] == "K" for c in calls))
+        self.assertGreater(len(calls), 4)                       # se partió la ventana
+
+    def test_failed_country_is_skipped(self):
+        def boom(url, params):
+            raise concerts.HttpError(500, url)
+        out = concerts.build("K", ["ES"], get=boom, sleep=lambda s: None, log=lambda m: None)
+        self.assertEqual(out["countries"], []); self.assertEqual(out["events"], [])

@@ -157,3 +157,12 @@ export async function searchArtist(name) {
   const d = await get('/search', { q: `artist:"${String(name).replace(/"/g, '')}"`, type: 'artist', limit: 5 });
   return (d.artists && d.artists.items) || [];
 }
+
+// Búsqueda de canciones y álbumes (también singles) para sus portadas
+const q = x => String(x).replace(/"/g, '');
+export async function searchTrack(artist, track) {
+  return ((await get('/search', { q: `track:"${q(track)}" artist:"${q(artist)}"`, type: 'track', limit: 5 })).tracks || {}).items || [];
+}
+export async function searchAlbum(artist, name) {
+  return ((await get('/search', { q: `album:"${q(name)}" artist:"${q(artist)}"`, type: 'album', limit: 5 })).albums || {}).items || [];
+}

@@ -7,6 +7,7 @@ Solo librería estándar. Uso: python tools/build_site.py [--out _site] [--skip-
 """
 import argparse
 import json
+import os
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -15,6 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "cli"))
 
+from vinyl_tracker import concerts as CONC  # noqa: E402
 from vinyl_tracker import stores as S  # noqa: E402
 from vinyl_tracker.http import HttpError  # noqa: E402
 
@@ -76,6 +78,15 @@ def main():
         data["stores"] = build_stores()
         if not data["stores"]:
             sys.exit("No se pudo descargar ninguna tienda")
+    key = os.environ.get("TICKETMASTER_KEY", "").strip()
+    if key and not args.skip_stores:
+        print("Conciertos (Ticketmaster):")
+        countries = [c.strip().upper() for c in os.environ.get("CONCERT_COUNTRIES", "ES,PT,FR,DE,GB,IT").split(",") if c.strip()]
+        conc = CONC.build(key, countries)
+        if conc["countries"]:
+            (out / "data" / "concerts.json").write_text(json.dumps(conc, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    else:
+        print("Conciertos: sin TICKETMASTER_KEY, se omiten")
     (out / "data" / "stores.json").write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     (out / ".nojekyll").write_text("")
     print(f"Sitio listo en {out}")

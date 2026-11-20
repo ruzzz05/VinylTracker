@@ -5,6 +5,7 @@ import * as store from './storage.js';
 import * as spotify from './spotify.js';
 import * as discogs from './discogs.js';
 import { h, safeUrl } from './dom.js';
+import { cachedImg } from './imgcache.js';
 
 const TTL_HIT = 30 * 86400000, TTL_MISS = 3 * 86400000;
 
@@ -72,10 +73,14 @@ export function artistImage(name) {
 // ---------- avatar (círculo con la inicial; se cambia por la foto cuando llega) ----------
 export function artistAvatar(name) {
   const letter = (name || '?').trim().charAt(0).toUpperCase();
-  const wrap = h('div', { class: 'avwrap' }, h('div', { class: 'cover ph round' }, letter));
+  const ph = () => h('div', { class: 'cover ph round' }, letter);
+  const wrap = h('div', { class: 'avwrap' });
+  const known = mem.get('artimg:' + fold(name));                 // ya resuelto en esta sesión: la foto sale al instante
+  if (known && safeUrl(known) !== '#') { wrap.append(cachedImg(known, { cls: 'cover round', onFail: () => wrap.replaceChildren(ph()) })); return wrap; }
+  wrap.append(ph());
   artistImage(name).then(url => {
     if (!url || safeUrl(url) === '#') return;
-    const img = h('img', { class: 'cover round', src: safeUrl(url), alt: '', referrerpolicy: 'no-referrer' });
+    const img = cachedImg(url, { cls: 'cover round', lazy: false });
     img.addEventListener('load', () => wrap.replaceChildren(img));          // solo se cambia si la imagen carga de verdad
   }).catch(() => {});
   return wrap;

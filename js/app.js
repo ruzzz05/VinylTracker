@@ -11,8 +11,14 @@ import { h, safeUrl } from './dom.js';
 import { buildStats, mergeStats } from './stats.js';
 import * as L from './live.js';
 import { artistsView, tracksView, statsView } from './statsview.js';
+import * as W from './wishlist.js';
+import * as cloud from './cloud.js';
+import * as wv from './wishview.js';
+import { concertsView } from './concertsview.js';
+import { trackCover, albumCover, knownCovers } from './covers.js';
+import * as imgcache from './imgcache.js';
 
-const VERSION = '1.4.3';
+const VERSION = '1.7.1';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -48,14 +54,14 @@ function toast(msg, isErr) {
 }
 const setStatus = s => { $('#status').textContent = s || ''; };
 
-function coverEl(a, cls = '') {
-  const letter = (a.name || a.artist || '?').trim().charAt(0).toUpperCase();
-  const ph = () => h('div', { class: 'cover ph ' + cls }, letter);
-  if (!a.image) return ph();
-  const img = h('img', { class: 'cover ' + cls, src: safeUrl(a.image), alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
-  img.addEventListener('error', () => img.replaceWith(ph()));
-  return img;
+// Portadas conocidas (API de Spotify + registro en vivo), recalculadas solo cuando cambian
+let knownMemo = { api: null, live: null, map: {} };
+function known() {
+  if (knownMemo.api !== state.apiAlbums || knownMemo.live !== state.live) knownMemo = { api: state.apiAlbums, live: state.live, map: knownCovers({ apiAlbums: state.apiAlbums, live: state.live }) };
+  return knownMemo.map;
 }
+// Álbum o single; si no trae portada se busca (Spotify / iTunes) y se guarda. Lo ya visto sale al instante.
+const coverEl = (a, cls = '') => albumCover(a, known(), cls);
 
 // ---------- estado ----------
 const state = {
@@ -69,7 +75,8 @@ const state = {
   now: undefined, nowError: '', liveBusy: false, liveError: '',
   csvAt: 0, syncing: false, syncError: '',
   prices: new Map(),          // key -> { discogs }
-  filter: 'todos', search: ''
+  filter: 'todos', search: '',
+  cloudAt: 0, cloudError: '', cloudBusy: false, wish: [], buyView: prefs.get('buyView', 'sugeridos'), scanStop: null, wishBusy: false
 };
 
 // Lo que ven las pantallas es lo importado MÁS lo recogido en vivo
@@ -85,6 +92,7 @@ const rankingList = () => C.buildRanking({ history: state.effHistory, api: state
   .map(r => ({ ...r, owned: C.isOwned(r, state.owned), offers: C.matchStores(r, state.storeIndex) }));
 
 async function loadAll() {
+  imgcache.preload().catch(() => {});
   state.history = C.rekeyHistory(await store.get('history', {}));
   state.historyInfo = await store.get('historyInfo', null);
   state.stats = await store.get('stats', null);
@@ -94,6 +102,7 @@ async function loadAll() {
   const api = await store.get('api', null);
   if (api) { state.apiAlbums = C.rekeyApi(api.albums); state.apiAt = api.at; }
   try { state.base = await collection.loadBase(); } catch (e) { toast('No se pudo leer tu colección de mi-app: ' + e.message, true); }
+  state.wish = await store.get('wishlist', []);
   const ex = await fb.cachedExtras();
   if (ex) { state.extras = ex.albums; state.extrasAt = ex.at; }
   state.csvAt = await collection.csvAt();
@@ -125,7 +134,7 @@ function markTab() {
 document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => go(b.dataset.tab)));
 
 function render() {
-  view.replaceChildren(({ ranking: vRanking, coleccion: vCollection, comprar: vBuy, ajustes: vSettings })[state.tab]());
+  view.replaceChildren(({ ranking: vRanking, coleccion: vCollection, comprar: vBuy, conciertos: vConcerts, ajustes: vSettings })[state.tab]());
   setStatus('');
 }
 
@@ -157,7 +166,7 @@ function albumRow(r, i) {
   return h('li', null, h('button', { class: 'row', onclick: () => openSheet(r) },
     h('div', { class: 'n' }, i + 1), coverEl(r),
     h('div', { class: 't' }, h('b', null, r.name), h('span', null, r.artist),
-      r.owned ? h('span', { class: 'own' }, '✓ En tu colección') : priceChip(r)),
+      r.owned ? h('span', { class: 'own' }, '✓ En tu colección') : r.wished ? h('span', { class: 'chip' }, '♡ En deseos') : priceChip(r)),
     metric(r)));
 }
 
@@ -185,7 +194,8 @@ function vRanking() {
   // El periodo vale para todas las vistas que usan el historial
   if (hasHistory || state.effStats) root.append(periodBar());
   if (view === 'artists') { root.append(artistsView({ stats: state.effStats, apiAlbums: state.apiAlbums, months: state.months, onImport: goSettings })); return root; }
-  if (view === 'tracks') { root.append(tracksView({ stats: state.effStats, months: state.months, onImport: goSettings })); return root; }
+  if (view === 'tracks') { root.append(tracksView({ stats: state.effStats, months: state.months, onImport: goSettings,
+    cover: t => trackCover(t, known()) })); return root; }
   if (view === 'stats') {
     root.append(statsView({ stats: state.effStats, history: state.effHistory, collection: state.collection, ranking: rankingList().slice(0, 40),
       months: state.months, onImport: goSettings }));
@@ -259,7 +269,7 @@ async function liveRefresh() {
     state.live = { ...live, at: Date.now() };
     state.liveError = '';
     await store.set('live', state.live);
-    if (fresh.length) { recompute(); if (state.tab === 'ranking') render(); }
+    if (fresh.length) { scheduleCloud('live'); recompute(); if (state.tab === 'ranking') render(); }
   } catch (e) { state.liveError = e.message; }
   finally { state.liveBusy = false; updateLiveUi(); }
 }
@@ -295,8 +305,7 @@ function startLive() {
 function tileEl(a) {
   const letter = (a.name || a.artist || '?').trim().charAt(0).toUpperCase();
   const ph = () => h('div', { class: 'ph' }, letter);
-  const media = a.image ? h('img', { src: safeUrl(a.image), alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : ph();
-  if (a.image) media.addEventListener('error', () => media.replaceWith(ph()));
+  const media = a.image ? imgcache.cachedImg(a.image, { onFail: img => img.replaceWith(ph()) }) : ph();
   const cap = h('span', { class: 'cap' }, h('b', null, a.name), h('i', null, a.artist));
   const link = safeUrl(a.url);
   // Como en mi-app: tocar una portada abre el álbum en Spotify
@@ -350,6 +359,7 @@ function vCollection() {
 }
 
 function showPanel(...kids) {
+  if (state.scanStop) state.scanStop();
   const sheet = $('#sheet');
   sheet.replaceChildren(h('div', { class: 'panel', role: 'dialog' }, ...kids));
   sheet.hidden = false;
@@ -450,10 +460,20 @@ async function syncAll() {
 }
 const syncExtras = syncAll;
 
-// ---------- Comprar ----------
+// ---------- Comprar (sugeridos · deseos · comprados) ----------
+const BUY_VIEWS = [['sugeridos', 'Sugeridos'], ['deseos', 'Deseos'], ['comprados', 'Comprados']];
+
 function vBuy() {
   const root = h('div');
-  const all = rankingList().filter(r => !r.owned).slice(0, 40);
+  const nWish = state.wish.filter(w => w.status === 'wanted').length, nBought = state.wish.filter(w => w.status === 'bought').length;
+  const labels = { sugeridos: 'Sugeridos', deseos: 'Deseos' + (nWish ? ` (${nWish})` : ''), comprados: 'Comprados' + (nBought ? ` (${nBought})` : '') };
+  root.append(h('div', { class: 'seg', role: 'group', 'aria-label': 'Vista' }, BUY_VIEWS.map(([k]) =>
+    h('button', { 'aria-pressed': String(state.buyView === k), onclick: () => { state.buyView = k; prefs.set('buyView', k); render(); } }, labels[k]))));
+  if (state.buyView === 'deseos') { root.append(wv.wishView(wishCtx)); return root; }
+  if (state.buyView === 'comprados') { root.append(wv.boughtView(wishCtx)); return root; }
+
+  const bought = W.boughtKeys(state.wish), wanted = W.wantedKeys(state.wish);
+  const all = C.minArtistPlays(rankingList(), 2).filter(r => !r.owned && !bought.has(r.key));     // todos los artistas con más de 1 reproducción
   const missing = all.filter(r => !state.prices.has(r.key));
   if (missing.length && !state.peeking) {
     state.peeking = true;      // precios ya consultados antes (caché local): se pintan sin red
@@ -471,15 +491,131 @@ function vBuy() {
     root.append(h('div', { class: 'empty' }, 'Cuando haya ranking, aquí verás lo que escuchas y todavía no tienes en vinilo.'));
     return root;
   }
-  root.append(h('p', { class: 'muted' }, 'Lo que más escuchas y aún no tienes en vinilo. Toca un disco para ver dónde comprarlo.'));
+  root.append(h('p', { class: 'muted' }, 'Lo que escuchas (artistas con más de 1 reproducción) y aún no tienes en vinilo (sin lo que ya marcaste como comprado). Toca un disco para ver dónde comprarlo o apuntarlo.'));
   root.append(h('div', { class: 'chips' }, [['todos', 'Todos'], ['precio', 'Con precio'], ['stock', 'En stock'], ['preventa', 'Preventa']]
     .map(([k, label]) => h('button', { class: 'chip', 'aria-pressed': String(state.filter === k), onclick: () => { state.filter = k; render(); } }, label))));
-  root.append(list.length ? h('ul', { class: 'list' }, list.map(albumRow)) : h('div', { class: 'empty' }, 'Nada con este filtro.'));
+  root.append(list.length ? h('ul', { class: 'list' }, list.map((r, i) => albumRow({ ...r, wished: wanted.has(r.key) }, i))) : h('div', { class: 'empty' }, 'Nada con este filtro.'));
   return root;
 }
 
+// ---------- Conciertos ----------
+function vConcerts() { return concertsView({ state, onSettings: () => go('ajustes') }); }
+
+// ---------- Deseos: contexto para las pantallas, guardado y avisos ----------
+const saveWish = () => { scheduleCloud('wish'); return store.set('wishlist', state.wish); };
+
+// ---------- Copia en la nube (Firestore de mi-app; solo el dueño) ----------
+const cloudSource = { wish: () => state.wish, live: () => state.live, history: () => ({ history: state.history, info: state.historyInfo, stats: state.stats }), prefs: () => cloud.collectPrefs() };
+const dirty = new Set();
+let cloudTimer;
+function scheduleCloud(...keys) {
+  if (!cloud.available()) return;
+  keys.forEach(k => dirty.add(k)); dirty.add('prefs');
+  clearTimeout(cloudTimer);
+  cloudTimer = setTimeout(cloudPush, 5000);
+}
+async function cloudPush({ all = false } = {}) {
+  if (!cloud.available() || state.cloudBusy) return;
+  state.cloudBusy = true; state.cloudError = '';
+  const keys = all ? cloud.KEYS : [...dirty]; dirty.clear();
+  try {
+    for (const k of keys) {
+      const data = cloudSource[k]();
+      if (k === 'history' && !state.stats && !Object.keys(state.history).length) continue;      // nada que subir
+      if (k === 'live' && !state.live.entries.length) continue;
+      await cloud.pushKey(k, data);
+    }
+    state.cloudAt = Date.now();
+  } catch (e) { state.cloudError = e.message; keys.forEach(k => dirty.add(k)); }
+  finally { state.cloudBusy = false; refreshCloudCard(); }
+}
+
+// Baja lo que haya en la nube y lo junta con lo local (en un móvil nuevo recupera todo). Luego sube lo que falte.
+async function cloudPull() {
+  if (!cloud.available() || state.cloudBusy) return;
+  state.cloudBusy = true; state.cloudError = '';
+  try {
+    const w = await cloud.pullKey('wish');
+    if (w) { state.wish = cloud.mergeWish(state.wish, w.data); await store.set('wishlist', state.wish); }
+    const lv = await cloud.pullKey('live');
+    if (lv && lv.data && Array.isArray(lv.data.entries)) {
+      state.live = { ...L.mergeLive(state.live, lv.data.entries, state.stats ? state.stats.total.lastTs : 0).live, at: state.live.at }; await store.set('live', state.live);
+    }
+    const hi = await cloud.pullKey('history');
+    if (hi && hi.at > cloud.localAt('history') && hi.data && hi.data.stats && !dirty.has('history')) {      // lo local sin subir manda
+      const d = hi.data;
+      state.history = C.rekeyHistory(d.history || {}); state.historyInfo = d.info || null; state.stats = d.stats;
+      await store.set('history', state.history); await store.set('historyInfo', state.historyInfo); await store.set('stats', state.stats);
+      state.live = L.pruneLive(state.live, state.stats.total.lastTs); await store.set('live', state.live);
+    }
+    const pf = await cloud.pullKey('prefs');
+    if (pf && pf.data) for (const [k, v] of Object.entries(pf.data)) if (cloud.PREF_KEYS.includes(k) && prefs.get(k, '') === '') prefs.set(k, v);
+    recompute(); updateBadge();
+    state.cloudBusy = false;
+    await cloudPush({ all: true });                 // sube lo local que la nube no tenga
+    state.cloudAt = Date.now();
+    if (state.tab !== 'ajustes') render();           // en Ajustes no se repinta (se perdería el archivo elegido): solo la tarjeta
+  } catch (e) { state.cloudError = e.message; }
+  finally { state.cloudBusy = false; refreshCloudCard(); }
+}
+const wishCtx = {
+  state, toast, showPanel, coverEl, saveWish,
+  closeSheet: () => closeSheet(),
+  render: () => render(),
+  refreshWish: () => { updateBadge(); if (state.tab === 'comprar') render(); }
+};
+
+// Insignia en la pestaña Comprar: cuántos deseos están disponibles ahora
+function updateBadge() {
+  const n = state.wish.filter(w => w.status === 'wanted' && ((w.notified && w.notified.length) || false)).length;
+  const b = document.querySelector('.tabs [data-tab=comprar]');
+  if (!b) return;
+  let dot = b.querySelector('.badge');
+  if (!n) { if (dot) dot.remove(); return; }
+  if (!dot) { dot = document.createElement('i'); dot.className = 'badge'; b.append(dot); }
+  dot.textContent = String(n);
+}
+
+function notifyAlerts(alerts) {
+  const texts = alerts.map(W.alertText);
+  toast((texts.length === 1 ? '¡Disponible! ' : `¡${texts.length} deseos disponibles! `) + texts.slice(0, 2).join(' · '));
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  const title = texts.length === 1 ? '¡Ya disponible!' : `${texts.length} vinilos disponibles`;
+  const body = texts.join('\n');
+  const show = reg => reg.showNotification(title, { body, icon: 'icons/icon-192.png', tag: 'vt-wish' });
+  if (navigator.serviceWorker) navigator.serviceWorker.ready.then(show).catch(() => { try { new Notification(title, { body }); } catch (e) { /* sin notificaciones */ } });
+}
+
+// Mira tiendas (al instante) y Discogs (los deseos que llevan 6 h sin consultarse, de uno en uno). Avisa de lo nuevo.
+async function wishCheck() {
+  if (state.wishBusy || !state.wish.some(w => w.status === 'wanted')) { updateBadge(); return; }
+  state.wishBusy = true;
+  try {
+    let r = W.checkAll(state.wish, { storeIndex: state.storeIndex });
+    const dgMap = {};
+    if (discogs.hasToken() && navigator.onLine !== false) {
+      const stale = r.list.filter(w => W.needsDiscogs(w)).slice(0, 6);
+      for (const w of stale) {
+        try { dgMap[w.id] = w.kind === 'release' && w.discogsId ? await discogs.releaseStats(w.discogsId, config.currency)
+          : await discogs.lookup({ ...w, key: C.albumKey(w.artist, w.name) }, config.currency).then(v => ({ forSale: v.none ? 0 : (v.forSale || 0), lowest: v.none ? null : v.lowest, at: Date.now() })); }
+        catch (e) { break; }        // límite o token: se reintenta más tarde
+      }
+    }
+    const r2 = Object.keys(dgMap).length ? W.checkAll(state.wish, { storeIndex: state.storeIndex, dgMap }) : r;
+    state.wish = r2.list;
+    await saveWish();
+    const alerts = [...new Map([...r.alerts, ...r2.alerts].map(a => [a.item.id, a])).values()];
+    if (alerts.length) notifyAlerts(alerts);
+    updateBadge();
+    if (state.tab === 'comprar') render();
+  } finally { state.wishBusy = false; }
+}
+
 // ---------- Ficha de álbum ----------
-function closeSheet() { $('#sheet').hidden = true; $('#sheet').replaceChildren(); }
+function closeSheet() {
+  if (state.scanStop) state.scanStop();      // apaga la cámara si el lector estaba abierto
+  $('#sheet').hidden = true; $('#sheet').replaceChildren();
+}
 
 async function openSheet(r) {
   const sheet = $('#sheet');
@@ -513,6 +649,7 @@ async function openSheet(r) {
           h('a', { href: safeUrl(d.url), target: '_blank', rel: 'noopener' }, 'Ver en Discogs')]
           : d && d.none ? h('p', { class: 'muted' }, 'No hay edición en vinilo en Discogs.')
             : h('button', { class: 'btn sec', id: 'dlook' }, 'Consultar precio')) : null,
+      !r.owned ? wv.wishButtons(wishCtx, r, paint) : null,
       h('div', { class: 'btns' }, spotifyLink && spotifyLink !== '#' ? h('a', { class: 'btn sec', href: safeUrl(spotifyLink), target: '_blank', rel: 'noopener' }, 'Abrir en Spotify') : null,
         h('button', { class: 'btn sec', onclick: closeSheet }, 'Cerrar')));
     const btn = body.querySelector('#dlook');
@@ -528,6 +665,18 @@ async function openSheet(r) {
 }
 
 // ---------- Ajustes ----------
+// Tarjeta «Copia en la nube» de Ajustes
+function cloudCard() {
+  return h('div', { class: 'card', id: 'cloud-card' }, h('h3', null, 'Copia en la nube'),
+    cloud.available()
+      ? [h('p', { class: 'muted' }, 'Tu lista de deseos y comprados, el registro en vivo, el historial importado y los ajustes se guardan en tu Firebase de mi-app. Así sobreviven a borrar la app: al iniciar sesión se recuperan solos. Los tokens y claves (Spotify, Discogs, Ticketmaster) NO se suben.'),
+        state.cloudError ? h('p', { class: 'muted bad' }, state.cloudError) : h('p', { class: 'own' }, state.cloudBusy ? 'Sincronizando…' : state.cloudAt ? '✓ Sincronizado ' + when(state.cloudAt) : 'Pendiente de sincronizar'),
+        state.cloudError && /403/.test(state.cloudError) ? h('p', { class: 'muted' }, 'Falta una regla en Firestore (consola de Firebase → Firestore → Reglas): permite leer y escribir en /vinilos/{doc} a tu UID de dueño, como ya haces con vinilos/coleccion.') : null,
+        h('div', { class: 'btns' }, h('button', { class: 'btn sec', disabled: state.cloudBusy, onclick: () => cloudPull() }, 'Sincronizar ahora'))]
+      : h('p', { class: 'muted' }, 'Solo la cuenta del dueño puede guardar la copia en la nube.'));
+}
+function refreshCloudCard() { const c = $('#cloud-card'); if (c) c.replaceWith(cloudCard()); }
+
 function field(label, input) { return h('div', null, h('label', null, label), input); }
 
 function vSettings() {
@@ -545,9 +694,11 @@ function vSettings() {
       : [field('Usuario', u), field('Contraseña', p),
         h('button', { class: 'btn', onclick: async e => {
           e.target.disabled = true;
-          try { await fb.login(u.value, p.value); await syncExtras(); } catch (err) { toast(err.message, true); }
+          try { await fb.login(u.value, p.value); await syncExtras(); cloudPull(); } catch (err) { toast(err.message, true); }
           render();
         } }, 'Iniciar sesión')]));
+
+  if (fb.isLoggedIn()) root.append(cloudCard());
 
   // Spotify
   const cid = h('input', { type: 'text', value: spotify.clientId(), autocapitalize: 'none', 'aria-label': 'Client ID' });
@@ -648,6 +799,7 @@ async function importHistory(files) {
     await store.set('history', into); await store.set('historyInfo', info); await store.set('stats', stats);
     state.history = into; state.historyInfo = info; state.stats = stats;
     state.live = L.pruneLive(state.live, stats.total.lastTs); await store.set('live', state.live); recompute();
+    scheduleCloud('history', 'live');
     toast(info.basic ? `Importado: ${S_fmt(stats.total.plays)} reproducciones (sin álbumes: es el paquete básico)` : `Historial importado: ${info.albums} álbumes`);
     if (info.basic && state.rankView === 'albums') { state.rankView = 'stats'; prefs.set('rankView', 'stats'); }
     go('ranking');
@@ -672,6 +824,11 @@ async function boot() {
   await loadAll();
   markTab();
   render();
+  updateBadge();
+  wishCheck();
+  cloudPull();
+  setInterval(() => { if (document.visibilityState === 'visible') wishCheck(); }, 30 * 60000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wishCheck(); });
   startLive();
   // Vuelta del login de Spotify: ?code=…&state=…
   const qs = new URLSearchParams(location.search);

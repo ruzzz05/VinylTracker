@@ -101,3 +101,27 @@ export async function cachedExtras() {
   const c = await store.get('extras');
   return c ? { albums: c.albums, at: c.at } : null;
 }
+
+// ---------- Documentos genéricos de la copia en la nube (colección vinilos, documentos vt-…) ----------
+const DOCS = `https://firestore.googleapis.com/v1/projects/${config.firebase.projectId}/databases/(default)/documents/vinilos/`;
+const fail = r => new Error(r.status === 403 ? 'Firestore respondió 403: tus reglas no dejan escribir ahí (ver Ajustes → Copia en la nube)' : 'Firestore respondió ' + r.status);
+
+// -> { at, n, json } | null. `fields` es un objeto plano { campo: número | texto }
+export async function getFields(name) {
+  const r = await fetch(DOCS + name, { headers: { Authorization: 'Bearer ' + await idToken() } });
+  if (r.status === 404) return null;
+  if (!r.ok) throw fail(r);
+  const f = (await r.json()).fields || {};
+  const out = {};
+  for (const [k, v] of Object.entries(f)) out[k] = v.integerValue !== undefined ? Number(v.integerValue) : v.stringValue;
+  return out;
+}
+
+export async function putFields(name, obj) {
+  if (!isOwner()) throw new Error('Solo el dueño puede guardar la copia en la nube.');
+  const fields = {};
+  for (const [k, v] of Object.entries(obj)) fields[k] = typeof v === 'number' ? { integerValue: String(v) } : { stringValue: String(v) };
+  const mask = Object.keys(obj).map(k => 'updateMask.fieldPaths=' + encodeURIComponent(k)).join('&');
+  const r = await fetch(`${DOCS}${name}?${mask}`, { method: 'PATCH', headers: { Authorization: 'Bearer ' + await idToken(), 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }) });
+  if (!r.ok) throw fail(r);
+}

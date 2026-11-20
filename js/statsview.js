@@ -43,12 +43,12 @@ export function artistsView({ stats, apiAlbums, months, now = new Date(), onImpo
 }
 
 // ---------------------------------------------------------------- Canciones
-export function tracksView({ stats, months, now = new Date(), onImport }) {
+export function tracksView({ stats, months, now = new Date(), onImport, cover }) {
   if (!stats) return needImport(onImport);
   const list = S.topTracks(stats, months, now, 50);
   if (!list.length) return h('div', { class: 'empty' }, 'No hay reproducciones en este periodo.');
   return h('ul', { class: 'list' }, list.map((t, i) => h('li', null, h('div', { class: 'row static' },
-    h('div', { class: 'n' }, i + 1), avatar(t.name),
+    h('div', { class: 'n' }, i + 1), cover ? cover(t) : avatar(t.name),
     h('div', { class: 't' }, h('b', null, t.name), h('span', null, t.album ? `${t.artist} · ${t.album}` : t.artist)),
     h('div', { class: 'm' }, h('b', null, S.fmtDur(t.ms)), `${S.fmtNum(t.plays)} reprod.`)))));
 }

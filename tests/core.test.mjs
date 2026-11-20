@@ -183,3 +183,16 @@ test('lector de zip: recupera los archivos completos de un zip CORTADO (sin dire
   assert.equal(entries[49].master_metadata_album_artist_name, 'Radiohead');
   await assert.rejects(() => readSpotifyZip(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]).buffer), /No parece un \.zip válido/);
 });
+
+test('minArtistPlays: fuera artistas con una sola reproducción', async () => {
+  const { minArtistPlays } = await import('../js/core.js');
+  const l = [{ artist: 'A', plays: 1 }, { artist: 'B', plays: 1 }, { artist: 'b', plays: 1 }, { artist: 'C', plays: 0 }];
+  assert.deepEqual(minArtistPlays(l).map(r => r.artist), ['B', 'b', 'C']);
+});
+
+test('el id de un deseo conserva el formato antiguo (los deseos guardados no se rompen)', async () => {
+  const { wishId } = await import('../js/wishlist.js');
+  assert.equal(wishId({ kind: 'album', artist: 'Diego 900', name: 'La Espalda del Sol' }), 'a|diego 900|espalda sol');
+  assert.equal(wishId({ kind: 'release', discogsId: 123, artist: 'x', name: 'y' }), 'r123');
+  assert.notEqual(C.albumKey('Diego 900', 'La Espalda del Sol'), C.legacyAlbumKey('Diego 900', 'La Espalda del Sol'));
+});

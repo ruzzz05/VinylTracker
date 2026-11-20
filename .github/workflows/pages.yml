@@ -31,7 +31,9 @@ jobs:
         run: |
           node --test tests/*.test.mjs
           cd cli && python -m unittest discover -s tests -t .
-      - name: Montar el sitio (PWA + catálogos de tiendas)
+      - name: Montar el sitio (PWA + catálogos de tiendas + conciertos)
+        env:
+          TICKETMASTER_KEY: ${{ secrets.TICKETMASTER_KEY }}
         run: python tools/build_site.py
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

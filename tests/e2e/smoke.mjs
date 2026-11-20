@@ -16,6 +16,10 @@ const server = spawn('python3', ['-m', 'http.server', '8765', '--bind', '127.0.0
 process.on('exit', () => server.kill());
 await new Promise(r => setTimeout(r, 800));
 const BASE = 'http://127.0.0.1:8765/';
+const STORES_FILE = path.join(ROOT, '_site/data/stores.json');
+const writeStores = available => writeFileSync(STORES_FILE, JSON.stringify({ generated: new Date().toISOString(), stores: { Apparell: { base: 'https://apparell.example',
+  items: [['Delta Goodrem - Pure (Vinyl LP)', 'Delta Goodrem', 22, available, 'delta-goodrem-pure', 0, '']] } } }));
+writeStores(0);
 
 const CSV = 'Artist,Name,Image,Tags,Url\nAbhir, ULTRASWAN,,r&b, https://open.spotify.com/album/2Gzdlis2gby7peCvJ0Poif?si=x\nRosalía,Motomami,,pop,\n';
 const entry = (artist, album, n, month = '2026-10') => Array.from({ length: n }, (_, i) => ({
@@ -42,15 +46,34 @@ await ctx.route('https://identitytoolkit.googleapis.com/**', r => json(r, { idTo
 const mk = (id, artist, name) => ({ id, artist, name, image: 'https://i.scdn.co/' + id + '.jpg', tags: ['rock'], url: 'https://open.spotify.com/album/' + id });
 let cloud = JSON.stringify({ albums: [mk('AAAAAAAAAAAAAAAAAAAAAA', 'Radiohead', 'OK Computer')] });
 let patched = null;
+const vt = new Map();           // documentos vt-… de la copia en la nube
 await ctx.route('https://firestore.googleapis.com/**', r => {
+  const m = /\/vinilos\/(vt-[^?]+)/.exec(r.request().url());
+  if (m) {
+    if (r.request().method() === 'PATCH') { vt.set(m[1], JSON.parse(r.request().postData()).fields); return json(r, {}); }
+    return vt.has(m[1]) ? json(r, { fields: vt.get(m[1]) }) : json(r, {}, 404);
+  }
   if (r.request().method() === 'PATCH') { patched = JSON.parse(r.request().postData()); cloud = patched.fields.json.stringValue; return json(r, {}); }
   return json(r, { fields: { updatedAt: { integerValue: '1' }, json: { stringValue: cloud } } });
 });
 await ctx.route('https://open.spotify.com/oembed**', r => json(r, { title: 'Nuevo Disco', thumbnail_url: 'https://i.scdn.co/nuevo.jpg' }));
-await ctx.route('https://itunes.apple.com/**', r => json(r, { results: [{ artistName: 'Artista Nuevo', collectionName: 'Nuevo Disco', releaseDate: '2024-05-01T00:00:00Z', primaryGenreName: 'Rap' }] }));
+await ctx.route('https://itunes.apple.com/**', r => {
+  const u = new URL(r.request().url());
+  const term = u.searchParams.get('term') || '';
+  if (u.searchParams.get('entity') === 'song') {
+    return json(r, { results: [{ artistName: 'Nirvana', trackName: term.replace(/^Nirvana /, ''), collectionName: 'Nevermind', artworkUrl100: 'https://i.scdn.co/trk/100x100bb.jpg' }] });
+  }
+  if (u.searchParams.get('entity') === 'album' && /Delta/.test(term)) {
+    return json(r, { results: [{ artistName: 'Delta Goodrem', collectionName: 'Pure - Single', artworkUrl100: 'https://i.scdn.co/pure/100x100bb.jpg' }] });
+  }
+  return json(r, { results: [{ artistName: 'Artista Nuevo', collectionName: 'Nuevo Disco', releaseDate: '2024-05-01T00:00:00Z', primaryGenreName: 'Rap' }] });
+});
 await ctx.route('https://api.discogs.com/**', r => {
   discogsCalls++;
   const u = decodeURIComponent(r.request().url()).replace(/\+/g, ' ');
+  if (u.includes('barcode=')) {
+    return json(r, { results: u.includes('5901234123457') ? [{ id: 333, title: 'Rosalía - Motomami', year: '2022', country: 'EU', label: ['Columbia'], format: ['Vinyl', 'LP', 'Album'], community: { have: 5, want: 1 } }] : [] });
+  }
   if (u.includes('/database/search')) {
     const all = [{ id: 111, title: 'Nirvana - Nevermind', community: { have: 900, want: 50 } },
       { id: 222, title: 'Delta Goodrem - Pure', community: { have: 3, want: 1 } }];
@@ -61,7 +84,8 @@ await ctx.route('https://api.discogs.com/**', r => {
 });
 // Imagen de 1x1 píxel para las fotos de prueba
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
-await ctx.route('https://i.scdn.co/**', r => r.fulfill({ status: 200, contentType: 'image/png', body: PNG }));
+let pureHits = 0;
+await ctx.route('https://i.scdn.co/**', r => { if (/\/pure\//.test(r.request().url())) pureHits++; return r.fulfill({ status: 200, contentType: 'image/png', body: PNG }); });
 await ctx.route('https://accounts.spotify.com/authorize**', r => {
   const u = new URL(r.request().url());
   r.fulfill({ status: 302, headers: { location: `${BASE}?code=CODE&state=${u.searchParams.get('state')}` } });
@@ -104,6 +128,14 @@ assert.equal(rows[0], 'Nevermind');
 await page.screenshot({ path: path.join(SHOTS, '2-ranking.png') });
 const owned = await page.$$eval('.row .own', els => els.length);
 assert.ok(owned >= 3, 'ULTRASWAN (csv, por id), Motomami (csv, por nombre) y OK Computer (nube): ' + owned);
+// Álbumes/singles sin portada guardada: se buscan solos (Delta Goodrem · Pure es un single)
+await page.waitForFunction(() => [...document.querySelectorAll('.row')].some(r => /Pure/.test(r.textContent) && r.querySelector('img.cover')), null, { timeout: 20000 });
+// y las portadas no se vuelven a descargar al cambiar de pestaña
+await page.waitForTimeout(800);
+const hits0 = pureHits;
+for (const t of ['coleccion', 'ajustes', 'ranking', 'coleccion', 'ranking']) { await page.click('[data-tab=' + t + ']'); await page.waitForTimeout(150); }
+await page.waitForFunction(() => [...document.querySelectorAll('.row')].some(r => /Pure/.test(r.textContent) && r.querySelector('img.cover')), null, { timeout: 5000 });
+assert.ok(pureHits - hits0 <= 1, 'la portada se descargó de nuevo al cambiar de pestaña: ' + (pureHits - hits0));
 await page.click('.seg >> text=Todo');
 assert.ok((await page.$$('.row')).length >= 5);
 
@@ -151,6 +183,88 @@ await page.waitForSelector('text=Copia más barata');
 assert.ok(discogsCalls > 0);
 await page.screenshot({ path: path.join(SHOTS, '5-ficha.png') });
 await page.click('.sheet >> text=Cerrar');
+
+// ---------- Deseos y comprados ----------
+await page.click('[data-tab=comprar]');
+await page.click('.seg button:has-text("Deseos")');
+await page.waitForSelector('text=Aquí van los vinilos que quieres');
+// a mano
+await page.click('text=+ Añadir vinilo');
+await page.click('summary:has-text("a mano")');
+await page.fill('.sheet input[placeholder="Artista"]', 'Delta Goodrem');
+await page.fill('.sheet input[placeholder="Álbum"]', 'Pure');
+await page.click('.sheet >> text=Añadir álbum');
+await page.waitForSelector('.sheet', { state: 'hidden' });
+await page.waitForSelector('.row.wrow:has-text("Pure")');
+assert.match(await page.textContent('.row.wrow'), /No disponible ahora/);
+await page.screenshot({ path: path.join(SHOTS, '3b-deseos.png') });
+// código de barras: la cámara no existe en la prueba, se escribe a mano (primero uno mal)
+await page.evaluate(() => localStorage.setItem('vt.discogs.token', 'tok'));
+await page.click('text=Escanear código');
+await page.fill('.sheet input[placeholder^="o escríbelo"]', '5901234123458');
+await page.click('.sheet >> text=Buscar código');
+await page.waitForSelector('.sheet >> text=no es válido');
+await page.fill('.sheet input[placeholder^="o escríbelo"]', '5901234123457');
+await page.click('.sheet >> text=Buscar código');
+await page.waitForSelector('.rescard');
+assert.match(await page.textContent('.rescard'), /Motomami/);
+assert.match(await page.textContent('.rescard'), /Ya está en tu colección/);
+await page.screenshot({ path: path.join(SHOTS, '3c-codigo.png') });
+await page.click('.rescard >> text=Esta edición');
+await page.waitForSelector('.rescard >> text=Añadido');
+await page.click('.sheet >> text=Cerrar');
+await page.waitForSelector('.row.wrow:has-text("Motomami")');
+assert.match(await page.textContent('#view'), /Edición/);
+// copia en la nube: la lista de deseos se sube sola (comprimida) y se puede recuperar
+await page.waitForFunction(() => true);
+await page.waitForTimeout(5600);
+assert.ok(vt.has('vt-wish') && vt.has('vt-wish-0'), 'la lista de deseos debe subirse a Firestore');
+assert.ok(!JSON.stringify([...vt]).includes('tok'), 'no se suben tokens');
+// borrar los datos locales de deseos y recargar: se recuperan de la nube
+await page.evaluate(() => new Promise(res => { const r = indexedDB.open('vinyltracker', 1); r.onsuccess = () => { const t = r.result.transaction('kv', 'readwrite'); t.objectStore('kv').delete('wishlist'); t.oncomplete = () => res(); }; }));
+await page.reload();
+await page.waitForSelector('.row.wrow:has-text("Pure")');
+await page.waitForSelector('.row.wrow:has-text("Motomami")');
+// aviso: Pure pasa a estar en stock en la tienda
+writeStores(1);
+await page.reload();
+await page.waitForSelector('#toast:not([hidden])');
+assert.match(await page.textContent('#toast'), /Pure.*ya disponible en Apparell/);
+await page.waitForSelector('.tabs .badge');
+assert.equal((await page.textContent('.tabs .badge')).trim(), '2');         // Pure (tienda) y Motomami (copias en Discogs)
+await page.waitForSelector('.row.wrow:has-text("Pure") .chip.ok');
+// marcar como comprado desde la ficha de un álbum sugerido: sale de las sugerencias y NO entra en la colección
+await page.click('.seg button:has-text("Sugeridos")');
+await page.waitForSelector('.list .row');
+assert.match(await page.textContent('.list .row >> nth=0'), /Nevermind/);
+await page.click('.list .row >> nth=0');
+await page.click('.sheet >> text=✓ Ya lo compré');
+await page.waitForSelector('.sheet >> text=Comprado (fuera de la colección)');
+await page.click('.sheet >> text=Cerrar');
+assert.ok(!/Nevermind/.test(await page.textContent('#view')), 'lo comprado debe salir de las sugerencias');
+await page.click('.seg button:has-text("Comprados")');
+await page.waitForSelector('.row.wrow:has-text("Nevermind")');
+await page.screenshot({ path: path.join(SHOTS, '3d-comprados.png') });
+await page.click('.seg button:has-text("Sugeridos")');
+
+// ---------- Conciertos ----------
+const CONC = path.join(ROOT, '_site/data/concerts.json');
+const ce = (id, date, cc, city, acts) => [id, acts[0] + ' en directo', date, '21:00', 'ok', 'Sala X', city, cc, 'https://tm.example/' + id, acts];
+await page.click('[data-tab=conciertos]');
+await page.waitForSelector('text=Todavía no hay datos de conciertos');
+writeFileSync(CONC, JSON.stringify({ generated: new Date().toISOString(), countries: ['ES', 'PT'], events: [
+  ce('e2', '2027-04-02', 'PT', 'Lisboa', ['Nirvana']), ce('e1', '2027-03-12', 'ES', 'Madrid', ['Nirvana', 'Foo Fighters']), ce('e0', '2027-03-01', 'ES', 'Bilbao', ['Nirvana Tribute']) ] }));
+await page.click('text=Volver a mirar');
+await page.waitForSelector('.crow');
+assert.equal((await page.$$('.crow')).length, 1, 'por defecto solo España y sin el tributo');
+assert.match(await page.textContent('.crow'), /Madrid/);
+assert.match(await page.textContent('.crow'), /Foo Fighters/);
+await page.selectOption('select[aria-label="País"]', '');
+assert.equal((await page.$$('.crow')).length, 2);
+assert.match(await page.textContent('#view'), /marzo de 2027/i);
+assert.ok(!/NaN|undefined|null/.test(await page.textContent('#view')));
+await page.screenshot({ path: path.join(SHOTS, '3e-conciertos.png') });
+await page.selectOption('select[aria-label="País"]', 'ES');
 
 // Colección: 2 del CSV + 1 de la nube, como pared de portadas
 await page.click('[data-tab=coleccion]');
@@ -233,6 +347,11 @@ await page.waitForSelector('.row.static .avwrap img.cover.round');
 assert.equal((await page.$$('.row.static .avwrap img.cover.round')).length, 1, 'solo Nirvana tiene foto en la prueba');
 assert.ok((await page.$$('.row.static .avwrap .cover.ph.round')).length >= 3, 'los demás conservan la inicial');
 await page.screenshot({ path: path.join(SHOTS, '7c-artistas-fotos.png') });
+// Portadas de canciones: las pone iTunes (simulado) cuando el álbum no trae portada
+await page.click('.seg button:has-text("Canciones")');
+await page.waitForSelector('.row.static .avwrap img.cover', { timeout: 20000 });
+assert.ok((await page.$$('.row.static .avwrap img.cover')).length >= 1, 'las canciones deben tener portada');
+await page.screenshot({ path: path.join(SHOTS, '7d-canciones-portadas.png') });
 await page.click('.seg button:has-text("Álbumes")');
 
 
