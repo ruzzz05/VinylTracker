@@ -155,3 +155,9 @@ test('relativeTime', () => {
   assert.equal(C.relativeTime(now - 3 * 86400000, now), 'hace 3 días');
   assert.equal(C.relativeTime(0, now), '');
 });
+
+test('minArtistPlays: fuera artistas con una sola reproducción', async () => {
+  const { minArtistPlays } = await import('../js/core.js');
+  const l = [{ artist: 'A', plays: 1 }, { artist: 'B', plays: 1 }, { artist: 'b', plays: 1 }, { artist: 'C', plays: 0 }];
+  assert.deepEqual(minArtistPlays(l).map(r => r.artist), ['B', 'b', 'C']);
+});

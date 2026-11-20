@@ -256,3 +256,39 @@ details.dt th, details.dt td { text-align: left; padding: 3px 4px; border-bottom
 .avwrap { width: 56px; height: 56px; flex: none; }
 .avwrap .cover { width: 56px; height: 56px; }
 .cover.round, .cover.ph.round { border-radius: 50%; }
+
+/* Portadas de canciones (cuadradas) */
+.avwrap .cover { object-fit: cover; }
+
+/* Comprar: deseos y comprados */
+.tabs button { position: relative; }
+.tabs .badge { position: absolute; top: 4px; left: calc(50% + 6px); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px; background: var(--acc2); color: #fff; font: normal 700 .65rem/16px inherit; font-family: inherit; text-align: center; }
+.wrow { grid-template-columns: 56px 1fr auto; }
+.chips.tight { margin: 2px 0 0; gap: 4px; }
+.chips.tight .chip { font-size: .72rem; padding: 2px 8px; }
+.row .t .chips { white-space: normal; }
+.row .t .chips .chip { display: inline-block; overflow: visible; color: var(--text); }
+.row .t .chips .chip.ok { color: var(--ok); }
+.row .t .chips .chip.warn { color: var(--warn); }
+.rescard { margin: 8px 0; padding: 10px; }
+.rescard .head .cover { width: 64px; height: 64px; }
+.rescard .btns { margin: 8px 0 0; }
+.btn.sm { white-space: nowrap; }
+.sheet details { margin: 10px 0; }
+.sheet details summary { cursor: pointer; padding: 6px 0; }
+
+/* Lector de código de barras */
+.scanframe { position: relative; border-radius: 14px; overflow: hidden; background: #000; aspect-ratio: 4 / 3; margin: 8px 0; }
+.scanframe[hidden] { display: none; }
+.scanvideo { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scanline { position: absolute; left: 8%; right: 8%; top: 50%; height: 2px; background: var(--acc2); box-shadow: 0 0 12px var(--acc2); animation: vt-pulse 1.2s ease-in-out infinite; }
+.scanframe::before { content: ''; position: absolute; inset: 25% 5%; border: 2px solid #fff8; border-radius: 10px; pointer-events: none; }
+
+/* Conciertos */
+.month { margin: 16px 0 8px; font-size: 1rem; color: var(--muted); text-transform: none; }
+.crow { grid-template-columns: 52px 1fr auto; text-decoration: none; }
+.crow .t span { white-space: normal; }
+.cdate { display: flex; flex-direction: column; align-items: center; background: var(--surface2); border-radius: 12px; padding: 6px 0; line-height: 1.1; }
+.cdate b { font-size: 1.35rem; }
+.cdate span { font-size: .75rem; text-transform: uppercase; color: var(--acc2); font-weight: 700; }
+.cdate small { font-size: .65rem; color: var(--muted); text-transform: capitalize; }

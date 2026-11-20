@@ -345,3 +345,10 @@ export function mergeHistory(a, b) {
   }
   return out;
 }
+
+// Quita lo de artistas con una sola reproducción (una canción suelta). Lo que solo viene de la API de Spotify (sin reproducciones contadas) se conserva.
+export function minArtistPlays(list, min = 2) {
+  const by = new Map();
+  for (const r of list) by.set(fold(r.artist), (by.get(fold(r.artist)) || 0) + (r.plays || 0));
+  return list.filter(r => !r.plays && !by.get(fold(r.artist)) ? true : by.get(fold(r.artist)) >= min);
+}

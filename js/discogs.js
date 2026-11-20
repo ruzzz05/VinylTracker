@@ -55,3 +55,20 @@ export async function lookup(album, currency = 'EUR') {
 export async function searchArtist(name) {
   return (await call('/database/search', { type: 'artist', q: name, per_page: 5 })).results || [];
 }
+
+// Edición concreta: copias a la venta y precio más bajo. -> { forSale, lowest, at }
+export async function releaseStats(id, currency = 'EUR') {
+  const st = await call(`/marketplace/stats/${id}`, { curr_abbr: currency });
+  const lp = st.lowest_price;
+  return { forSale: st.num_for_sale ?? 0, lowest: lp && typeof lp === 'object' ? lp.value : lp ?? null, at: Date.now() };
+}
+
+// Búsqueda libre de ediciones en vinilo (para la lista de deseos). Discogs exige token para buscar.
+export async function searchReleases(q) {
+  return (await call('/database/search', { type: 'release', format: 'Vinyl', q, per_page: 20 })).results || [];
+}
+
+// Por código de barras (cualquier formato; los vinilos salen primero al ordenar)
+export async function searchBarcode(code) {
+  return (await call('/database/search', { type: 'release', barcode: code, per_page: 20 })).results || [];
+}
