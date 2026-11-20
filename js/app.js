@@ -18,7 +18,7 @@ import { concertsView } from './concertsview.js';
 import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 
-const VERSION = '1.7.1';
+const VERSION = '1.7.2';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -779,13 +779,26 @@ function vSettings() {
   return root;
 }
 
+// Lee el zip y, si no se puede, dice POR QUÉ (tamaño, si empieza como un zip…) en vez de un genérico "no válido"
+async function readZipFile(f) {
+  const buf = await f.arrayBuffer();
+  try { return await readSpotifyZip(buf); }
+  catch (e) {
+    if (!/No parece un \.zip/.test(e.message)) throw e;
+    const mb = (buf.byteLength / 1e6).toFixed(1), head = new Uint8Array(buf, 0, Math.min(4, buf.byteLength));
+    if (!buf.byteLength) throw new Error('El archivo está vacío (0 bytes). Si está en iCloud Drive, ábrelo antes en Archivos para que se descargue del todo.');
+    if (head[0] !== 0x50 || head[1] !== 0x4b) throw new Error(`«${f.name}» (${mb} MB) no empieza como un zip. ¿Es el archivo de Spotify tal cual, sin descomprimir ni renombrar?`);
+    throw new Error(`El zip (${mb} MB) está dañado o incompleto y no pude recuperar ningún archivo de música. Descárgalo otra vez de Spotify.`);
+  }
+}
+
 async function importHistory(files) {
   if (!files || !files.length) return toast('Elige el .zip o los .json del export', true);
   try {
     setStatus('Importando…');
     let entries = [];
     for (const f of files) {
-      if (/\.zip$/i.test(f.name)) entries.push(...await readSpotifyZip(await f.arrayBuffer()));
+      if (/\.zip$/i.test(f.name) || f.type === 'application/zip') for (const e of await readZipFile(f)) entries.push(e);
       else { const j = JSON.parse(await f.text()); if (Array.isArray(j)) entries.push(...j); }
     }
     entries = C.normalizeEntries(entries);      // el paquete básico ("Datos de la cuenta") se adapta al ampliado

@@ -388,6 +388,26 @@ await p3.click('.seg button:has-text("Álbumes")');
 await p3.waitForSelector('text=no trae nombres de álbum');
 await ctx3.close();
 
+// Importar zips problemáticos: el mensaje explica la causa y el zip cortado SÍ se importa
+writeFileSync(path.join(SHOTS, 'texto.zip'), 'esto no es un zip, solo texto');
+writeFileSync(path.join(SHOTS, 'vacio.zip'), '');
+writeFileSync(path.join(SHOTS, 'roto.zip'), Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('basura sin sentido que no es un zip de verdad'.repeat(5))]));
+const ctx4 = await browser.newContext({ ...devices['iPhone 14'], locale: 'es-ES' });
+await ctx4.route('https://ruzzz05.github.io/mi-app/**', r => r.fulfill({ status: 200, contentType: 'text/csv', headers: { 'access-control-allow-origin': '*' }, body: CSV }));
+const p4 = await ctx4.newPage();
+p4.setDefaultTimeout(15000);
+await p4.goto(BASE);
+await p4.click('[data-tab=ajustes]');
+for (const [file, texto] of [['texto.zip', /no empieza como un zip/], ['vacio.zip', /vacío/], ['roto.zip', /dañado o incompleto/]]) {
+  await p4.setInputFiles('input[type=file]', path.join(SHOTS, file));
+  await p4.click('text=Importar');
+  await p4.waitForFunction(re => new RegExp(re).test(document.querySelector('#toast')?.textContent || ''), texto.source);
+}
+await p4.setInputFiles('input[type=file]', path.join(ROOT, 'tests', 'spotify-truncated.zip'));    // cortado, como el de Spotify
+await p4.click('text=Importar');
+await p4.waitForFunction(() => /Historial importado: 2 álbumes/.test(document.querySelector('#toast')?.textContent || ''));
+await ctx4.close();
+
 assert.deepEqual(errors, []);
 console.log('OK: flujo completo, capturas en', SHOTS);
 await browser.close();
