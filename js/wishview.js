@@ -119,7 +119,7 @@ export function itemSheet(ctx, id) {
           h('div', null, h('b', null, o.store), h('small', null, o.title)),
           h('div', { style: 'text-align:right' }, h('b', null, C.money(o.price)), h('small', { class: 'own' }, o.preorder && !o.available ? 'Preventa' : 'En stock'),
             h('a', { href: safeUrl(o.url), target: '_blank', rel: 'noopener' }, 'Abrir'))))
-          : h('p', { class: 'muted' }, 'Ahora mismo no está en Universal Music Online ni en Apparell.'),
+          : h('p', { class: 'muted' }, `Ahora mismo no está en ${ctx.storeNames()}.`),
         w.dg && w.dg.forSale > 0 ? h('div', { class: 'stat' }, h('span', null, 'Discogs'), h('b', null, `${w.dg.forSale} a la venta` + (w.dg.lowest != null ? ` desde ${C.money(w.dg.lowest)}` : ''))) : null,
         h('div', { class: 'offer' }, h('div', null, h('b', null, 'Fnac'), h('small', null, 'Búscalo a mano')), h('a', { href: C.fnacUrl(w), target: '_blank', rel: 'noopener' }, 'Buscar')),
         h('div', { class: 'offer' }, h('div', null, h('b', null, 'El Corte Inglés'), h('small', null, 'Búscalo a mano')), h('a', { href: C.corteInglesUrl(w), target: '_blank', rel: 'noopener' }, 'Buscar'))),

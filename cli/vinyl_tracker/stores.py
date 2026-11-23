@@ -10,7 +10,10 @@ from .text import clean_album, overlap, tokens
 SHOPIFY_STORES = {
     "Universal Music Online": "https://universalmusiconline.es/collections/vinilos",
     "Apparell": "https://apparell.com",
+    "Sony Music Store": "https://store.sonymusic.es/collections/vinilos",
 }
+# Para añadir otra tienda basta una línea más: sirve cualquier web hecha con Shopify (si tiene /products.json).
+# Si una tienda no responde o no es Shopify, se salta sin romper nada (el log del despliegue dice cuál).
 FNAC_SEARCH = "https://www.fnac.es/SearchResult/ResultList.aspx?Search="
 MONTHS = {m: i for i, m in enumerate(
     "enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre".split(), 1)}

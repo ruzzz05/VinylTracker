@@ -18,7 +18,7 @@ import { concertsView } from './concertsview.js';
 import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 
-const VERSION = '1.7.5';
+const VERSION = '1.8.0';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -570,6 +570,7 @@ async function cloudPull() {
   finally { state.cloudBusy = false; refreshCloudCard(); }
 }
 const wishCtx = {
+  storeNames: () => storeNames(),
   state, toast, showPanel, coverEl, saveWish,
   closeSheet: () => closeSheet(),
   render: () => render(),
@@ -622,6 +623,9 @@ async function wishCheck() {
   } finally { state.wishBusy = false; }
 }
 
+// Nombres de las tiendas con catálogo descargado: «A», «A y B», «A, B y C»
+const storeNames = () => { const n = [...new Set(state.storeIndex.map(o => o.store))]; return n.length > 1 ? n.slice(0, -1).join(', ') + ' y ' + n[n.length - 1] : n[0] || 'las tiendas'; };
+
 // ---------- Ficha de álbum ----------
 function closeSheet() {
   if (state.scanStop) state.scanStop();      // apaga la cámara si el lector estaba abierto
@@ -649,7 +653,7 @@ async function openSheet(r) {
           h('div', null, h('b', null, o.store), h('small', null, o.title + (o.preorder ? ' · preventa' + (o.release ? ' ' + o.release : '') : ''))),
           h('div', { style: 'text-align:right' }, h('b', null, C.money(o.price)), h('small', { class: o.available || o.preorder ? 'own' : 'muted' },
             o.preorder ? 'Preventa' : o.available ? 'En stock' : 'Agotado'), h('a', { href: safeUrl(o.url), target: '_blank', rel: 'noopener' }, 'Abrir'))))
-          : h('p', { class: 'muted' }, state.storeIndex.length ? 'No aparece en Universal Music Online ni en Apparell.' : 'Aún no hay datos de tiendas.'),
+          : h('p', { class: 'muted' }, state.storeIndex.length ? `No aparece en ${storeNames()}.` : 'Aún no hay datos de tiendas.'),
         h('div', { class: 'offer' }, h('div', null, h('b', null, 'Fnac'), h('small', null, 'Bloquea consultas automáticas: búscalo a mano')),
           h('a', { href: C.fnacUrl(r), target: '_blank', rel: 'noopener' }, 'Buscar')),
         h('div', { class: 'offer' }, h('div', null, h('b', null, 'El Corte Inglés'), h('small', null, 'Bloquea consultas automáticas: búscalo a mano')),
@@ -782,7 +786,7 @@ function vSettings() {
 
   // Datos
   root.append(h('div', { class: 'card' }, h('h3', null, 'Datos'),
-    h('p', { class: 'muted' }, `VinylTracker ${VERSION}. Todo se guarda en este dispositivo. Tiendas: Universal Music Online y Apparell (actualizadas a diario); Fnac y El Corte Inglés no permiten consultas automáticas (se ofrece su búsqueda).`),
+    h('p', { class: 'muted' }, `VinylTracker ${VERSION}. Todo se guarda en este dispositivo. Tiendas: ${storeNames()} (actualizadas a diario); Fnac y El Corte Inglés no permiten consultas automáticas (se ofrece su búsqueda).`),
     h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: checkUpdate }, 'Buscar actualización')),
     h('button', { class: 'btn danger', onclick: async () => {
       if (!confirm('¿Borrar todos los datos de VinylTracker de este dispositivo?')) return;

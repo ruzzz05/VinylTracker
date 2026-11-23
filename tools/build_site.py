@@ -54,7 +54,10 @@ def build_stores() -> dict:
             items = compact(S.fetch_catalog(base))
             out[name] = {"base": base, "items": items}
             print(f"  {name}: {len(items)} vinilos")
-        except (HttpError, OSError) as e:
+            if not items:
+                print(f"  ! {name}: sin vinilos (¿no es Shopify?), se ignora", file=sys.stderr)
+                del out[name]
+        except (HttpError, OSError, ValueError, KeyError) as e:      # ValueError: la web no devolvió JSON (no es Shopify)
             print(f"  ! {name}: {e}", file=sys.stderr)
     return out
 
