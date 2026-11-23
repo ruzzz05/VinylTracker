@@ -166,3 +166,7 @@ export async function searchTrack(artist, track) {
 export async function searchAlbum(artist, name) {
   return ((await get('/search', { q: `album:"${q(name)}" artist:"${q(artist)}"`, type: 'album', limit: 5 })).albums || {}).items || [];
 }
+
+// Datos completos de un álbum y de su artista (año, sello, estilos…) para «Añadir disco»
+export const fetchAlbum = id => get('/albums/' + encodeURIComponent(id), {});
+export const fetchArtist = id => get('/artists/' + encodeURIComponent(id), {});

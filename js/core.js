@@ -85,7 +85,7 @@ export function mergeCollection(base, extras) {
   for (const e of extras || []) {
     if (!e || !e.artist || !e.name) continue;
     if (e.id && seen.has(e.id)) continue;
-    out.push({ artist: e.artist, name: e.name, image: e.image || '', tags: e.tags || [], url: e.url || '', year: e.year || null, id: e.id || '', extra: true });
+    out.push({ artist: e.artist, name: e.name, image: e.image || '', tags: e.tags || [], url: e.url || '', year: e.year || null, id: e.id || '', extra: true, manual: !!e.manual });
   }
   return out;
 }
@@ -394,4 +394,18 @@ export function minArtistPlays(list, min = 2) {
   const by = new Map();
   for (const r of list) by.set(fold(r.artist), (by.get(fold(r.artist)) || 0) + (r.plays || 0));
   return list.filter(r => !r.plays && !by.get(fold(r.artist)) ? true : by.get(fold(r.artist)) >= min);
+}
+
+// ---------- Discos añadidos a mano o por código de barras (no llevan id de Spotify, así que no pueden ir al documento de mi-app) ----------
+// Se guardan en el dispositivo y en la copia de la nube de VinylTracker. -> { ok, album } | { ok: false, error }
+export function makeManual({ name, artist, year, tags, image, spotifyUrl, id, now }) {
+  const n = cleanText(name, MAX_NAME), a = cleanText(artist, MAX_ARTIST);
+  if (!n) return { ok: false, error: 'Falta el nombre del álbum.' };
+  if (!a) return { ok: false, error: 'Falta el artista.' };
+  const img = cleanText(image, MAX_IMAGE);
+  if (img && !validImage(img)) return { ok: false, error: 'La portada debe ser una dirección https.' };
+  const sp = spotifyUrl && String(spotifyUrl).trim() ? parseSpotifyAlbum(spotifyUrl) : null;
+  if (spotifyUrl && String(spotifyUrl).trim() && !sp) return { ok: false, error: 'Ese enlace no es de un álbum de Spotify.' };
+  return { ok: true, album: { id: id || 'm' + (now || Date.now()).toString(36) + Math.random().toString(36).slice(2, 6), artist: a, name: n, image: img,
+    tags: Array.isArray(tags) ? tags : normalizeTags(tags), url: sp ? sp.url : '', year: cleanYear(year), addedAt: now || Date.now(), manual: true } };
 }

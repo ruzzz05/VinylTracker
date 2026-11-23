@@ -149,7 +149,7 @@ export function wishButtons(ctx, r, repaint) {
 }
 
 // ---------- resultados de Discogs (búsqueda y código de barras) ----------
-function resultCard(ctx, r, { barcode = '' } = {}) {
+function resultCard(ctx, r, { barcode = '', onPick = null } = {}) {
   const owned = C.isOwned({ artist: r.artist, name: r.name, key: C.albumKey(r.artist, r.name) }, ctx.state.owned);
   const have = W.find(ctx.state.wish, 'r' + r.discogsId) || ctx.state.wish.find(x => C.albumKey(x.artist, x.name) === C.albumKey(r.artist, r.name) && x.kind === 'album');
   const rel = { kind: 'release', discogsId: r.discogsId, artist: r.artist, name: r.name, image: r.image, detail: r.detail, barcode: barcode || r.barcode };
@@ -157,8 +157,9 @@ function resultCard(ctx, r, { barcode = '' } = {}) {
     h('div', { class: 'head' }, cover(ctx, r), h('div', null, h('b', null, r.name), h('p', { class: 'muted' }, r.artist), r.detail ? h('small', { class: 'muted' }, r.detail) : null,
       !r.isVinyl ? h('small', { class: 'bad' }, ' · no es vinilo') : null)),
     owned ? h('p', { class: 'own' }, '✓ Ya está en tu colección') : null,
-    have ? h('p', { class: 'muted' }, have.status === 'bought' ? 'Ya lo tienes apuntado como comprado.' : 'Ya está en tu lista de deseos.') : null,
-    h('div', { class: 'btns' },
+    onPick ? h('div', { class: 'btns' }, h('button', { class: 'btn sm', onclick: () => onPick({ ...r, barcode: barcode || r.barcode }) }, owned ? 'Añadir otra copia' : 'Añadir a la colección')) : null,
+    onPick ? null : have ? h('p', { class: 'muted' }, have.status === 'bought' ? 'Ya lo tienes apuntado como comprado.' : 'Ya está en tu lista de deseos.') : null,
+    onPick ? null : h('div', { class: 'btns' },
       h('button', { class: 'btn sm', onclick: e => { if (addItem(ctx, rel)) e.target.closest('.rescard').querySelector('.btns').replaceChildren(h('span', { class: 'chip ok' }, '♡ Añadido')); } }, '♡ Esta edición'),
       h('button', { class: 'btn sec sm', onclick: e => { if (addItem(ctx, { ...rel, kind: 'album', discogsId: 0, detail: '' })) e.target.closest('.rescard').querySelector('.btns').replaceChildren(h('span', { class: 'chip ok' }, '♡ Añadido')); } }, 'Cualquier edición'),
       h('button', { class: 'btn sec sm', onclick: e => { buyItem(ctx, W.makeWish(rel), null); e.target.closest('.rescard').querySelector('.btns').replaceChildren(h('span', { class: 'chip ok' }, '✓ Comprado')); } }, 'Ya lo compré')));
@@ -195,7 +196,8 @@ export function addSheet(ctx) {
 }
 
 // ---------- lector de código de barras ----------
-export function scanSheet(ctx) {
+// onPick: si se da, los resultados ofrecen «Añadir a la colección» y devuelven la edición elegida (en vez de deseos / comprado)
+export function scanSheet(ctx, { onPick = null } = {}) {
   const video = h('video', { class: 'scanvideo', playsinline: '', muted: '', hidden: true });
   const frame = h('div', { class: 'scanframe', hidden: true }, video, h('i', { class: 'scanline' }));
   const status = h('p', { class: 'muted', role: 'status' }, 'Apunta la cámara al código de barras de la contraportada.');
@@ -215,7 +217,7 @@ export function scanSheet(ctx) {
       for (const v of B.barcodeVariants(code)) { raw = await discogs.searchBarcode(v); if (raw.length) break; }
       const res = W.sortResults(raw).slice(0, 8);
       status.textContent = res.length ? `Código ${code}: ${res.length === 1 ? 'esta es la edición' : 'estas son las ediciones'}.` : `Código ${code}: Discogs no lo conoce.`;
-      out.replaceChildren(...res.map(r => resultCard(ctx, r, { barcode: code })),
+      out.replaceChildren(...res.map(r => resultCard(ctx, r, { barcode: code, onPick })),
         h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: () => { out.replaceChildren(); start(); } }, 'Escanear otro')));
     } catch (e) { status.textContent = e.message; status.className = 'muted bad'; }
   }

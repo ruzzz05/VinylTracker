@@ -12,13 +12,15 @@ import { buildStats, mergeStats } from './stats.js';
 import * as L from './live.js';
 import { artistsView, tracksView, statsView } from './statsview.js';
 import * as W from './wishlist.js';
+import * as addview from './addview.js';
+import * as addinfo from './albuminfo.js';
 import * as cloud from './cloud.js';
 import * as wv from './wishview.js';
 import { concertsView } from './concertsview.js';
 import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 
-const VERSION = '1.8.2';
+const VERSION = '1.9.0';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -76,7 +78,7 @@ const state = {
   csvAt: 0, syncing: false, syncError: '',
   prices: new Map(),          // key -> { discogs }
   filter: 'todos', search: '',
-  cloudAt: 0, cloudError: '', cloudBusy: false, wish: [], buyView: prefs.get('buyView', 'sugeridos'), scanStop: null, wishBusy: false
+  manual: [], cloudAt: 0, cloudError: '', cloudBusy: false, wish: [], buyView: prefs.get('buyView', 'sugeridos'), scanStop: null, wishBusy: false
 };
 
 // Lo que ven las pantallas es lo importado MÁS lo recogido en vivo
@@ -103,6 +105,7 @@ async function loadAll() {
   if (api) { state.apiAlbums = C.rekeyApi(api.albums); state.apiAt = api.at; }
   try { state.base = await collection.loadBase(); } catch (e) { toast('No se pudo leer tu colección de mi-app: ' + e.message, true); }
   state.wish = await store.get('wishlist', []);
+  state.manual = await store.get('manual', []);
   const ex = await fb.cachedExtras();
   if (ex) { state.extras = ex.albums; state.extrasBad = ex.bad || []; state.extrasAt = ex.at; }
   state.csvAt = await collection.csvAt();
@@ -115,7 +118,7 @@ async function loadAll() {
 }
 
 function rebuildCollection() {
-  state.collection = collection.combine(state.base, state.extras);
+  state.collection = collection.combine(state.base, state.extras.concat(state.manual));
   state.owned = C.ownedIndex(state.collection);
 }
 
@@ -309,7 +312,7 @@ function tileEl(a) {
   const cap = h('span', { class: 'cap' }, h('b', null, a.name), h('i', null, a.artist));
   const link = safeUrl(a.url);
   // Como en mi-app: tocar una portada abre el álbum en Spotify
-  return link !== '#'
+  return link !== '#' && !a.manual
     ? h('a', { class: 'tile', href: link, target: '_blank', rel: 'noopener' }, media, cap)
     : h('button', { class: 'tile', onclick: () => openSheet({ ...a, key: C.albumKey(a.artist, a.name), owned: true, offers: [] }) }, media, cap);
 }
@@ -343,7 +346,9 @@ function vCollection() {
     h('div', { class: 'filters' }, sel, h('div', { class: 'syncgroup' }, dot, syncBtn)),
     h('div', { class: 'actions' },
       h('button', { class: 'btn', onclick: openRandom }, 'Disco aleatorio'),
-      fb.isOwner() ? h('button', { class: 'btn sec', onclick: openAdd }, '+ Añadir disco') : null));
+      h('button', { class: 'btn sec', onclick: () => addview.openAdd(addCtx) }, '+ Añadir disco')),
+    h('div', { class: 'actions' },
+      h('button', { class: 'btn sec', onclick: () => wv.scanSheet(addCtx, { onPick: r => addview.openAdd(addCtx, { prefill: addinfo.discogsInfo(r) }) }) }, 'Escanear código')));
   if (state.extrasBad.length) root.append(h('div', { class: 'card' },
     h('p', null, `⚠ Hay ${state.extrasBad.length} disco${state.extrasBad.length === 1 ? '' : 's'} en la nube que no se puede${state.extrasBad.length === 1 ? '' : 'n'} mostrar.`),
     h('button', { class: 'btn sec sm', onclick: showBadExtras }, 'Ver cuáles y por qué')));
@@ -392,73 +397,20 @@ function openRandom() {
       h('button', { class: 'btn sec', onclick: closeSheet }, 'Cerrar')));
 }
 
-// Solo el dueño: al pegar un enlace de Spotify, oEmbed (público) da nombre y portada e iTunes sugiere artista, año y estilo
-function openAdd() {
-  let add = null;     // { spotify, image, year }
-  const link = h('input', { type: 'url', inputmode: 'url', placeholder: 'Pega aquí el enlace (Compartir → Copiar enlace)', autocomplete: 'off', autocapitalize: 'none' });
-  const name = h('input', { type: 'text', maxlength: '120', autocomplete: 'off' });
-  const artist = h('input', { type: 'text', maxlength: '80', list: 'artist-list', autocomplete: 'off' });
-  const tags = h('input', { type: 'text', autocomplete: 'off', placeholder: 'rap, trap' });
-  const list = h('datalist', { id: 'artist-list' }, [...new Set(state.collection.map(a => a.artist))].sort((x, y) => x.localeCompare(y, 'es')).map(a => h('option', { value: a })));
-  const preview = h('div', { class: 'head', hidden: true });
-  const suggest = h('div', { class: 'suggest' });
-  const status = h('p', { class: 'muted', role: 'status' });
-  const save = h('button', { class: 'btn', disabled: true }, 'Guardar disco');
-  const say = (m, err) => { status.textContent = m || ''; status.className = 'muted' + (err ? ' bad' : ''); };
-  const chips = h('div', { class: 'chips' }, C.allTags(state.collection).map(t => h('button', { class: 'chip', type: 'button', onclick: () => {
-    tags.value = C.normalizeTags(tags.value + ',' + t).join(', ');
-  } }, t)));
-
-  link.addEventListener('input', async () => {
-    const sp = C.parseSpotifyAlbum(link.value);
-    add = null; save.disabled = true; preview.hidden = true; suggest.replaceChildren();
-    if (!sp) return say(link.value.trim() ? 'Eso no parece un enlace de álbum de Spotify.' : '', !!link.value.trim());
-    if (state.collection.some(a => a.id === sp.id || (a.url && a.url.includes(sp.id)))) return say('Ese disco ya está en tu colección.', true);
-    say('Buscando el álbum…');
-    try {
-      const res = await fetch('https://open.spotify.com/oembed?url=' + encodeURIComponent(sp.url));
-      if (!res.ok) throw new Error('Spotify respondió ' + res.status);
-      const info = await res.json();
-      if (!link.value.includes(sp.id)) return;          // el enlace cambió mientras buscaba
-      add = { spotify: sp, image: info.thumbnail_url, year: null };
-      preview.replaceChildren(h('img', { class: 'cover', src: safeUrl(info.thumbnail_url), alt: '', referrerpolicy: 'no-referrer', style: 'width:84px;height:84px' }), h('b', null, info.title));
-      preview.hidden = false; name.value = info.title || ''; save.disabled = false;
-      say('Elige o escribe el artista y los estilos, y guarda.');
-      itunes(info.title);
-    } catch (e) { say('No se pudo leer el álbum de Spotify: ' + e.message, true); }
-  });
-
-  async function itunes(title) {
-    try {
-      const res = await fetch('https://itunes.apple.com/search?entity=album&limit=5&country=ES&term=' + encodeURIComponent(title));
-      const found = (await res.json()).results || [];
-      suggest.replaceChildren(...found.map(r => h('button', { class: 'sug', type: 'button', onclick: () => {
-        artist.value = r.artistName;
-        if (r.primaryGenreName && !tags.value) tags.value = r.primaryGenreName.toLowerCase();
-        if (add) add.year = (r.releaseDate || '').slice(0, 4);
-      } }, r.artistName, h('small', null, `${r.collectionName} · ${(r.releaseDate || '').slice(0, 4)} · ${r.primaryGenreName || ''}`))));
-    } catch (e) { /* las sugerencias son opcionales */ }
-  }
-
-  save.addEventListener('click', async () => {
-    if (!add) return;
-    const r = C.newAlbum({ spotifyUrl: add.spotify.url, name: name.value, artist: artist.value, image: add.image, tags: tags.value, year: add.year });
-    if (!r.ok) return say(r.error, true);
-    save.disabled = true; say('Guardando…');
-    try {
-      const out = await fb.addAlbum(r.album);
-      state.extras = out.albums; state.extrasBad = out.bad || []; state.extrasAt = out.at; rebuildCollection();
-      closeSheet(); toast('Disco añadido: ' + r.album.name); render();
-    } catch (e) { say('No se pudo guardar: ' + e.message, true); save.disabled = false; }
-  });
-
-  showPanel(h('h2', null, 'Añadir disco'),
-    h('label', null, 'Enlace del álbum en Spotify'), link, preview,
-    h('label', null, 'Nombre del álbum'), name,
-    h('label', null, 'Artista'), artist, list, suggest,
-    h('label', null, 'Estilos (separados por comas)'), tags, chips, status,
-    h('div', { class: 'btns' }, save, h('button', { class: 'btn sec', onclick: closeSheet }, 'Cancelar')));
-}
+// Contexto del formulario «Añadir disco» y de los discos manuales (lista propia: dispositivo + copia en la nube)
+const addCtx = {
+  state, toast, showPanel, closeSheet: () => closeSheet(),
+  coverEl: (...a) => coverEl(...a),
+  render: () => render(),
+  refreshWish: () => { updateBadge(); if (state.tab === 'comprar') render(); },
+  saveWish: () => saveWish(),
+  storeNames: () => storeNames(),
+  addManual: a => { state.manual = [a, ...state.manual]; saveManual(); },
+  updateManual: a => { state.manual = state.manual.map(x => (x.id === a.id ? a : x)); saveManual(); },
+  removeManual: id => { state.manual = state.manual.filter(x => x.id !== id); saveManual(); },
+  addToMiApp: async album => { const out = await fb.addAlbum(album); state.extras = out.albums; state.extrasBad = out.bad || []; state.extrasAt = out.at; rebuildCollection(); render(); }
+};
+function saveManual() { rebuildCollection(); store.set('manual', state.manual); scheduleCloud('manual'); if (state.tab === 'coleccion') render(); }
 
 // Vuelve a leer el CSV de mi-app y, con sesión, los discos añadidos en la nube
 async function syncAll() {
@@ -520,7 +472,7 @@ function vConcerts() { return concertsView({ state, onSettings: () => go('ajuste
 const saveWish = () => { scheduleCloud('wish'); return store.set('wishlist', state.wish); };
 
 // ---------- Copia en la nube (Firestore de mi-app; solo el dueño) ----------
-const cloudSource = { wish: () => state.wish, live: () => state.live, history: () => ({ history: state.history, info: state.historyInfo, stats: state.stats }), prefs: () => cloud.collectPrefs() };
+const cloudSource = { manual: () => state.manual, wish: () => state.wish, live: () => state.live, history: () => ({ history: state.history, info: state.historyInfo, stats: state.stats }), prefs: () => cloud.collectPrefs() };
 const dirty = new Set();
 let cloudTimer;
 function scheduleCloud(...keys) {
@@ -538,6 +490,7 @@ async function cloudPush({ all = false } = {}) {
       const data = cloudSource[k]();
       if (k === 'history' && !state.stats && !Object.keys(state.history).length) continue;      // nada que subir
       if (k === 'live' && !state.live.entries.length) continue;
+      if (k === 'manual' && !state.manual.length && !cloud.localAt('manual')) continue;
       await cloud.pushKey(k, data);
     }
     state.cloudAt = Date.now();
@@ -552,6 +505,8 @@ async function cloudPull() {
   try {
     const w = await cloud.pullKey('wish');
     if (w) { state.wish = cloud.mergeWish(state.wish, w.data); await store.set('wishlist', state.wish); }
+    const mn = await cloud.pullKey('manual');
+    if (mn && Array.isArray(mn.data) && mn.at > cloud.localAt('manual') && !dirty.has('manual')) { state.manual = mn.data; await store.set('manual', state.manual); rebuildCollection(); }
     const lv = await cloud.pullKey('live');
     if (lv && lv.data && Array.isArray(lv.data.entries)) {
       state.live = { ...L.mergeLive(state.live, lv.data.entries, state.stats ? state.stats.total.lastTs : 0).live, at: state.live.at }; await store.set('live', state.live);
@@ -671,6 +626,9 @@ async function openSheet(r) {
           : d && d.none ? h('p', { class: 'muted' }, 'No hay edición en vinilo en Discogs.')
             : h('button', { class: 'btn sec', id: 'dlook' }, 'Consultar precio')) : null,
       !r.owned ? wv.wishButtons(wishCtx, r, paint) : null,
+      r.manual ? h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: () => addview.openAdd(addCtx, { editing: state.manual.find(m => m.id === r.id) || r }) }, 'Editar etiquetas y datos'),
+        h('button', { class: 'btn danger', onclick: () => { if (confirm('¿Quitar este disco de la colección?')) { addCtx.removeManual(r.id); closeSheet(); } } }, 'Quitar')) : null,
+      r.tags && r.tags.length ? h('div', { class: 'chips' }, r.tags.map(t => h('span', { class: 'chip' }, t))) : null,
       h('div', { class: 'btns' }, spotifyLink && spotifyLink !== '#' ? h('a', { class: 'btn sec', href: safeUrl(spotifyLink), target: '_blank', rel: 'noopener' }, 'Abrir en Spotify') : null,
         h('button', { class: 'btn sec', onclick: closeSheet }, 'Cerrar')));
     const btn = body.querySelector('#dlook');

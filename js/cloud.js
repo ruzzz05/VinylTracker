@@ -5,7 +5,7 @@ import * as fb from './firebase.js';
 import { prefs } from './storage.js';
 
 export const CHUNK = 700000;
-export const KEYS = ['wish', 'live', 'history', 'prefs'];
+export const KEYS = ['wish', 'manual', 'live', 'history', 'prefs'];
 export const PREF_KEYS = ['theme', 'months', 'rankView', 'buyView', 'tab', 'concMonths', 'conc.country', 'discogs.user', 'filter'];
 
 export async function pack(obj) {

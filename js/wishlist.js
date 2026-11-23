@@ -5,6 +5,7 @@
 //   · kind 'release' → una edición concreta de Discogs (se vigila además su mercado)
 // status 'wanted' = lo quiero; 'bought' = ya lo compré (NO entra en la colección: solo se anota y deja de salir como sugerencia).
 import { albumKey, legacyAlbumKey, matchStores } from './core.js';
+import { genreTags } from './albuminfo.js';
 
 export const wishId = ({ kind, discogsId, artist, name }) => (kind === 'release' && discogsId ? 'r' + discogsId : 'a|' + legacyAlbumKey(artist, name));   // formato antiguo a propósito: los deseos ya guardados (y su copia en la nube) llevan ese id
 
@@ -101,7 +102,8 @@ export function parseDiscogsResult(r) {
   const detail = [r.year, r.country, label, extra].filter(Boolean).join(' · ');
   const image = [r.cover_image, r.thumb].find(u => u && !/spacer\.gif/.test(u)) || '';
   return { discogsId: Number(r.id) || 0, artist, name, year: r.year || '', country: r.country || '', label, detail, image,
-    isVinyl: fmt.some(f => /vinyl|^lp$/i.test(f)), barcode: [].concat(r.barcode || [])[0] || '' };
+    isVinyl: fmt.some(f => /vinyl|^lp$/i.test(f)), barcode: [].concat(r.barcode || [])[0] || '',
+    tags: genreTags([].concat(r.style || []), [].concat(r.genre || [])) };
 }
 
 // Vinilos primero, y dentro de ellos los que más gente tiene (suelen ser la edición "normal")

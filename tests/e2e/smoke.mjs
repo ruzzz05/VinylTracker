@@ -73,6 +73,10 @@ await ctx.route('https://itunes.apple.com/**', r => {
 await ctx.route('https://api.discogs.com/**', r => {
   discogsCalls++;
   const u = decodeURIComponent(r.request().url()).replace(/\+/g, ' ');
+  if (u.includes('barcode=4006381333931')) {
+    return json(r, { results: [{ id: 444, title: 'Artista Raro - Disco Raro', year: '2019', country: 'ES', label: ['Sello Raro'], format: ['Vinyl', 'LP'], genre: ['Electronic'], style: ['Ambient', 'Drone'],
+      cover_image: 'https://i.scdn.co/raro.jpg', community: { have: 3, want: 1 } }] });
+  }
   if (u.includes('barcode=')) {
     return json(r, { results: u.includes('5901234123457') ? [{ id: 333, title: 'Rosalía - Motomami', year: '2022', country: 'EU', label: ['Columbia'], format: ['Vinyl', 'LP', 'Album'], community: { have: 5, want: 1 } }] : [] });
   }
@@ -100,6 +104,9 @@ let recent = [recentItem('En vivo 1', 5)];
 await ctx.route('https://api.spotify.com/v1/**', r => {
   const u = r.request().url();
   const alb = (id, name, artist) => ({ id, name, artists: [{ name: artist }], images: [], album_type: 'album', total_tracks: 10 });
+  if (/\/v1\/albums\/[A-Za-z0-9]{22}/.test(u)) return json(r, { id: '7yyRTcZmCiyzzJlNzGC9Ol', name: 'Álbum Completo', release_date: '2021-03-05', label: 'Sello Spotify', total_tracks: 12, album_type: 'album',
+    artists: [{ id: 'ART1', name: 'Artista Completo' }], images: [{ url: 'https://i.scdn.co/full-64', width: 64 }, { url: 'https://i.scdn.co/full-640', width: 640 }] });
+  if (/\/v1\/artists\/ART1/.test(u)) return json(r, { id: 'ART1', name: 'Artista Completo', genres: ['indie pop', 'bedroom pop'] });
   if (u.includes('/me/top/tracks')) return json(r, { items: [{ album: alb('s1', 'La Deriva', 'Vetusta Morla') }, { album: alb('s2', 'Nevermind', 'Nirvana') }] });
   if (u.includes('/search')) return json(r, { artists: { items: [{ name: 'Nirvana', popularity: 80, images: [{ url: 'https://i.scdn.co/art-big' }, { url: 'https://i.scdn.co/art-mid' }] }] } });
   if (u.includes('recently-played')) return json(r, { items: recent });
@@ -322,6 +329,68 @@ await page.waitForSelector('.wall .tile');
 assert.equal((await page.$$('.wall .tile')).length, 4);
 await page.screenshot({ path: path.join(SHOTS, '6b-tras-anadir.png') });
 
+// ---------- Añadir a la colección: a mano, por código de barras (editando etiquetas antes de guardar) y editar / quitar ----------
+page.on('dialog', d => d.accept());
+await page.click('[data-tab=coleccion]');
+await page.waitForSelector('.wall .tile');
+const tiles0 = (await page.$$('.wall .tile')).length;
+patched = null;
+// a mano
+await page.click('text=+ Añadir disco');
+await page.fill('.sheet input[placeholder="Nombre del álbum"]', 'Disco Manual');
+await page.fill('.sheet input[placeholder="Artista"]', 'Artista Manual');
+await page.fill('.sheet input[placeholder^="Año"]', '2020');
+await page.fill('.sheet input[placeholder="rap, trap"]', 'jazz, lofi');
+assert.match(await page.textContent('.sheet'), /Se guardará en este dispositivo/);
+await page.click('.sheet >> text=Guardar disco');
+await page.waitForSelector('.sheet', { state: 'hidden' });
+await page.waitForSelector('.wall .tile:has-text("Disco Manual")');
+assert.equal((await page.$$('.wall .tile')).length, tiles0 + 1);
+assert.equal(patched, null, 'un disco manual no debe tocar el documento de mi-app');
+assert.match(await page.textContent('.counter'), new RegExp(`${tiles0 + 1} vinilos`));
+// código de barras desde la colección: primero el formulario (etiquetas de Discogs), luego se edita y se guarda
+await page.click('.actions >> text=Escanear código');
+await page.fill('.sheet input[placeholder^="o escríbelo"]', '4006381333931');
+await page.click('.sheet >> text=Buscar código');
+await page.waitForSelector('.rescard');
+assert.ok(!(await page.textContent('.rescard')).includes('Cualquier edición'), 'en la colección solo se ofrece añadir');
+await page.click('.rescard >> text=Añadir a la colección');
+await page.waitForSelector('.sheet input[placeholder="Nombre del álbum"]');
+assert.equal(await page.inputValue('.sheet input[placeholder="Nombre del álbum"]'), 'Disco Raro');
+assert.equal(await page.inputValue('.sheet input[placeholder="Artista"]'), 'Artista Raro');
+assert.equal(await page.inputValue('.sheet input[placeholder^="Año"]'), '2019');
+assert.equal(await page.inputValue('.sheet input[placeholder="rap, trap"]'), 'ambient, drone, electronic');
+assert.equal(await page.inputValue('.sheet input[placeholder^="Portada"]'), 'https://i.scdn.co/raro.jpg');
+await page.screenshot({ path: path.join(SHOTS, '6c-formulario-codigo.png') });
+await page.fill('.sheet input[placeholder="rap, trap"]', 'ambient, drone, favorito');          // se editan las etiquetas antes de guardar
+await page.click('.sheet >> text=Guardar disco');
+await page.waitForSelector('.wall .tile:has-text("Disco Raro")');
+assert.equal((await page.$$('.wall .tile')).length, tiles0 + 2);
+assert.equal(patched, null);
+// la copia en la nube recibe los discos manuales
+await page.waitForTimeout(5600);
+assert.ok(vt.has('vt-manual') && vt.has('vt-manual-0'), 'los discos manuales deben subirse a la copia de la nube');
+// filtro por una etiqueta nueva
+await page.selectOption('select[aria-label="Filtrar por estilo"]', 'favorito');
+assert.equal((await page.$$('.wall .tile')).length, 1);
+await page.selectOption('select[aria-label="Filtrar por estilo"]', '');
+// editar etiquetas de un disco manual
+await page.click('.wall .tile:has-text("Disco Manual")');
+await page.waitForSelector('.sheet .panel');
+assert.match(await page.textContent('.sheet .panel'), /jazz/);
+await page.click('.sheet >> text=Editar etiquetas y datos');
+await page.fill('.sheet input[placeholder="rap, trap"]', 'jazz, lofi, vinilo azul');
+await page.click('.sheet >> text=Guardar cambios');
+await page.waitForSelector('.sheet', { state: 'hidden' });
+await page.click('.wall .tile:has-text("Disco Manual")');
+assert.match(await page.textContent('.sheet .panel'), /vinilo azul/);
+// quitar
+await page.click('.sheet >> text=Quitar');
+await page.waitForSelector('.sheet', { state: 'hidden' });
+assert.equal((await page.$$('.wall .tile:has-text("Disco Manual")')).length, 0);
+assert.equal((await page.$$('.wall .tile')).length, tiles0 + 1);
+
+
 // Spotify: login PKCE simulado
 await page.click('[data-tab=ajustes]');
 // Enlace para hacer el login en Safari (cuando Spotify se queda en bucle en la app instalada)
@@ -363,6 +432,26 @@ assert.ok((await page.$$('.row.static .avwrap img.cover')).length >= 1, 'las can
 await page.screenshot({ path: path.join(SHOTS, '7d-canciones-portadas.png') });
 await page.click('.seg button:has-text("Álbumes")');
 
+
+
+// Enlace de Spotify con Spotify conectado: la API da año, sello, portada grande y estilos del artista; se guarda en mi-app
+await page.click('[data-tab=coleccion]');
+await page.waitForSelector('.wall .tile');
+patched = null;
+await page.click('text=+ Añadir disco');
+await page.fill('.sheet input[type=url][placeholder^="Opcional"]', 'https://open.spotify.com/album/7yyRTcZmCiyzzJlNzGC9Ol?si=abc');
+await page.waitForFunction(() => document.querySelector('.sheet input[placeholder="Nombre del álbum"]').value === 'Álbum Completo');
+assert.equal(await page.inputValue('.sheet input[placeholder="Artista"]'), 'Artista Completo');
+assert.equal(await page.inputValue('.sheet input[placeholder^="Año"]'), '2021');
+assert.equal(await page.inputValue('.sheet input[placeholder="rap, trap"]'), 'indie pop, bedroom pop');
+assert.equal(await page.inputValue('.sheet input[placeholder^="Portada"]'), 'https://i.scdn.co/full-640');
+assert.match(await page.textContent('.sheet'), /Sello Spotify/);
+assert.match(await page.textContent('.sheet'), /Se guardará en tu colección de mi-app/);
+await page.click('.sheet >> text=Guardar disco');
+await page.waitForSelector('.sheet', { state: 'hidden' });
+assert.ok(patched && patched.fields.json.stringValue.includes('Álbum Completo') && patched.fields.json.stringValue.includes('"year":2021') && patched.fields.json.stringValue.includes('bedroom pop'), 'no se guardó con toda la info en mi-app');
+await page.screenshot({ path: path.join(SHOTS, '7e-spotify-completo.png') });
+await page.click('[data-tab=ranking]');
 
 // Vuelta de Spotify a una ventana SIN el intento guardado (iPhone: vuelve a Safari, no a la app):
 // debe enseñar "Casi listo" y CONSERVAR el código en la dirección para poder copiarla

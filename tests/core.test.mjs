@@ -213,3 +213,24 @@ test('corteInglesUrl: búsqueda con artista, álbum limpio y «vinilo»', () => 
   const u = C.corteInglesUrl({ artist: 'Rosalía', name: 'Motomami (Deluxe)' });
   assert.match(u, /^https:\/\/www\.elcorteingles\.es\/search-nwx\/1\/\?s=Rosal%C3%ADa\+Motomami\+vinilo&stype=text_box$/);
 });
+
+test('makeManual: valida y completa un disco añadido a mano', () => {
+  const ok = C.makeManual({ name: ' Nevermind ', artist: 'Nirvana', year: '1991', tags: 'Grunge, rock, GRUNGE', image: 'https://i.discogs.com/x.jpg', now: 1000 });
+  assert.equal(ok.ok, true);
+  assert.deepEqual({ ...ok.album, id: '' }, { id: '', artist: 'Nirvana', name: 'Nevermind', image: 'https://i.discogs.com/x.jpg', tags: ['grunge', 'rock'], url: '', year: 1991, addedAt: 1000, manual: true });
+  assert.match(ok.album.id, /^m/);
+  assert.equal(C.makeManual({ name: '', artist: 'A' }).ok, false);
+  assert.equal(C.makeManual({ name: 'N', artist: '' }).ok, false);
+  assert.equal(C.makeManual({ name: 'N', artist: 'A', image: 'http://x/a.jpg' }).ok, false);          // portada solo https
+  assert.equal(C.makeManual({ name: 'N', artist: 'A', image: '' }).ok, true);                       // sin portada vale
+  assert.equal(C.makeManual({ name: 'N', artist: 'A', spotifyUrl: 'https://youtube.com/x' }).ok, false);
+  const sp = C.makeManual({ name: 'N', artist: 'A', spotifyUrl: 'https://open.spotify.com/album/2Gzdlis2gby7peCvJ0Poif?si=x' });
+  assert.equal(sp.album.url, 'https://open.spotify.com/album/2Gzdlis2gby7peCvJ0Poif');
+  assert.equal(C.makeManual({ name: 'N', artist: 'A', year: 'x' }).album.year, null);
+});
+
+test('mergeCollection conserva la marca de disco manual', () => {
+  const m = C.makeManual({ name: 'N', artist: 'A' }).album;
+  const out = C.mergeCollection([], [m]);
+  assert.equal(out[0].manual, true); assert.equal(out[0].extra, true);
+});
