@@ -20,7 +20,7 @@ import { concertsView } from './concertsview.js';
 import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 
-const VERSION = '1.9.0';
+const VERSION = '1.9.1';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -78,7 +78,7 @@ const state = {
   csvAt: 0, syncing: false, syncError: '',
   prices: new Map(),          // key -> { discogs }
   filter: 'todos', search: '',
-  manual: [], cloudAt: 0, cloudError: '', cloudBusy: false, wish: [], buyView: prefs.get('buyView', 'sugeridos'), scanStop: null, wishBusy: false
+  priceProgress: { running: false, done: 0, total: 0, error: '' }, priceTried: new Set(), priceRun: 0, manual: [], cloudAt: 0, cloudError: '', cloudBusy: false, wish: [], buyView: prefs.get('buyView', 'sugeridos'), scanStop: null, wishBusy: false
 };
 
 // Lo que ven las pantallas es lo importado MÁS lo recogido en vivo
@@ -124,6 +124,7 @@ function rebuildCollection() {
 
 // ---------- navegación ----------
 function go(tab) {
+  state.priceRun++; state.priceProgress.running = false;
   state.tab = tab; prefs.set('tab', tab);
   markTab();
   render();
@@ -453,6 +454,7 @@ function vBuy() {
     stock: r => r.offers.some(o => o.available), preventa: r => r.offers.some(o => o.preorder)
   };
   const list = all.filter(filters[state.filter]);
+  if (state.filter === 'precio') fetchPrices(all);          // al elegir «Con precio» se consulta Discogs (de uno en uno, con caché de 12 h)
 
   if (!all.length) {
     root.append(h('div', { class: 'empty' }, 'Cuando haya ranking, aquí verás lo que escuchas y todavía no tienes en vinilo.'));
@@ -460,9 +462,37 @@ function vBuy() {
   }
   root.append(h('p', { class: 'muted' }, 'Lo que escuchas (artistas con más de 1 reproducción) y aún no tienes en vinilo (sin lo que ya marcaste como comprado). Toca un disco para ver dónde comprarlo o apuntarlo.'));
   root.append(h('div', { class: 'chips' }, [['todos', 'Todos'], ['precio', 'Con precio'], ['stock', 'En stock'], ['preventa', 'Preventa']]
-    .map(([k, label]) => h('button', { class: 'chip', 'aria-pressed': String(state.filter === k), onclick: () => { state.filter = k; render(); } }, label))));
-  root.append(list.length ? h('ul', { class: 'list' }, list.map((r, i) => albumRow({ ...r, wished: wanted.has(r.key) }, i))) : h('div', { class: 'empty' }, 'Nada con este filtro.'));
+    .map(([k, label]) => h('button', { class: 'chip', 'aria-pressed': String(state.filter === k), onclick: () => { state.priceRun++; state.priceProgress.running = false; state.filter = k; render(); } }, label))));
+  if (state.filter === 'precio') {
+    const pp = state.priceProgress;
+    root.append(h('p', { class: 'muted' + (pp.error ? ' bad' : ''), role: 'status', id: 'price-progress' },
+      pp.error ? pp.error : pp.running ? `Consultando precios en Discogs… ${pp.done}/${pp.total}` : discogs.hasToken() ? 'Precios de tienda y de Discogs (copia más barata).' : 'Precios de tienda. Para ver también los de Discogs añade tu token en Ajustes → Discogs.'));
+  }
+  root.append(list.length ? h('ul', { class: 'list' }, list.map((r, i) => albumRow({ ...r, wished: wanted.has(r.key) }, i))) : h('div', { class: 'empty' }, state.filter === 'precio' && state.priceProgress.running ? 'Buscando precios…' : 'Nada con este filtro.'));
   return root;
+}
+
+// Precios de Discogs para «Con precio»: los primeros 60 sugeridos, de uno en uno (límite de Discogs) y guardados 12 h.
+// Cada intento se anota para no repetirlo en bucle; si Discogs rechaza el token o pide calma, se para y se avisa.
+async function fetchPrices(all) {
+  const pp = state.priceProgress;
+  if (pp.running || !discogs.hasToken()) return;
+  const todo = all.slice(0, 60).filter(r => !state.prices.has(r.key) && !state.priceTried.has(r.key));
+  if (!todo.length) return;
+  pp.running = true; pp.done = 0; pp.total = todo.length; pp.error = '';
+  const me = ++state.priceRun;
+  const repaint = () => { if (state.tab === 'comprar' && state.buyView === 'sugeridos' && state.filter === 'precio') { const top = view.scrollTop; render(); view.scrollTop = top; } };
+  setTimeout(repaint, 0);
+  for (const r of todo) {
+    if (me !== state.priceRun) break;                         // se cambió de pestaña o de filtro
+    state.priceTried.add(r.key);
+    try { state.prices.set(r.key, await discogs.lookup(r, config.currency)); }
+    catch (e) { pp.error = e.message; break; }
+    pp.done++;
+    repaint();
+  }
+  if (me === state.priceRun) pp.running = false;
+  repaint();
 }
 
 // ---------- Conciertos ----------

@@ -193,6 +193,22 @@ assert.ok(discogsCalls > 0);
 await page.screenshot({ path: path.join(SHOTS, '5-ficha.png') });
 await page.click('.sheet >> text=Cerrar');
 
+// «Con precio»: además de las tiendas, se consultan los precios de Discogs (de uno en uno) y salen en la lista
+await page.evaluate(() => localStorage.setItem('vt.discogs.token', 'tok'));
+await page.reload();
+await page.click('[data-tab=comprar]');
+await page.waitForSelector('.list .row');
+discogsCalls = 0;
+await page.click('.chip:has-text("Con precio")');
+await page.waitForFunction(() => /19,00/.test(document.querySelector('#view').textContent), null, { timeout: 30000 });
+for (let i = 0; i < 60 && !discogsCalls; i++) await page.waitForTimeout(250);
+assert.ok(discogsCalls > 0, 'debe consultar Discogs al elegir «Con precio»');
+await page.waitForFunction(() => !/Consultando precios/.test(document.querySelector('#view').textContent), null, { timeout: 60000 });
+assert.ok((await page.$$('.list .row')).length >= 1);
+assert.match(await page.textContent('#view'), /19,00/);
+await page.screenshot({ path: path.join(SHOTS, '3a-con-precio.png') });
+await page.click('.chip:has-text("Todos")');
+
 // ---------- Deseos y comprados ----------
 await page.click('[data-tab=comprar]');
 await page.click('.seg button:has-text("Deseos")');
