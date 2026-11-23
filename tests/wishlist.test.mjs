@@ -68,17 +68,11 @@ test('avisos: la preventa cuenta como disponible', () => {
   assert.match(W.alertText({ item: w, fresh: r.fresh, offers: r.offers }), /preventa/);
 });
 
-test('avisos: Discogs (copias a la venta) y conserva lo último si no se consulta', () => {
-  let w = { ...mk('Nada', 'Raro', { kind: 'release', discogsId: 9 }), notified: [] };
-  let r = W.checkItem(w, { storeIndex: [], dg: { forSale: 3, lowest: 20, at: 1 } });
-  assert.deepEqual(r.fresh, []);                           // primera consulta a Discogs: ya estaba a la venta, no avisa
-  w = { ...w, dg: { forSale: 0, lowest: null, at: 1 } };
-  r = W.checkItem(w, { storeIndex: [], dg: { forSale: 3, lowest: 20, at: 2 } });
-  assert.deepEqual(r.fresh, ['discogs']);
-  w = r.item;
-  r = W.checkItem(w, { storeIndex: [] });                  // dg undefined: no se consultó
-  assert.deepEqual(r.fresh, []); assert.equal(r.item.dg.forSale, 3);
-  assert.match(W.alertText({ item: w, fresh: ['discogs'], offers: [] }), /Discogs/);
+test('avisos: Discogs NO cuenta, solo el stock de las tiendas', () => {
+  const w = { ...mk('Nada', 'Raro', { kind: 'release', discogsId: 9 }), notified: [], dg: { forSale: 5, lowest: 10, at: 1 } };
+  const r = W.checkItem(w, { storeIndex: [], dg: { forSale: 3, lowest: 20, at: 2 } });      // aunque haya copias en Discogs
+  assert.deepEqual(r.fresh, []); assert.deepEqual(r.item.notified, []);
+  assert.deepEqual(W.liveKeys(w, []), []);
 });
 
 test('checkAll: solo mira lo deseado y devuelve los avisos', () => {
@@ -88,14 +82,6 @@ test('checkAll: solo mira lo deseado y devuelve los avisos', () => {
   assert.equal(alerts.length, 1); assert.equal(alerts[0].item.name, 'OK Computer');
   assert.equal(list[1], b);                                  // lo comprado no se toca
   assert.equal(list[0].checkedAt, 7);
-});
-
-test('needsDiscogs: cada 6 h y solo lo deseado', () => {
-  const w = mk('A', 'B');
-  assert.equal(W.needsDiscogs(w, 10), true);
-  assert.equal(W.needsDiscogs({ ...w, dg: { at: 10 } }, 20), false);
-  assert.equal(W.needsDiscogs({ ...w, dg: { at: 10 } }, 10 + W.DG_TTL + 1), true);
-  assert.equal(W.needsDiscogs({ ...w, status: 'bought' }, 10), false);
 });
 
 test('parseDiscogsResult / sortResults', () => {

@@ -20,7 +20,7 @@ import { concertsView } from './concertsview.js';
 import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 
-const VERSION = '1.9.1';
+const VERSION = '1.9.2';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -587,26 +587,15 @@ function notifyAlerts(alerts) {
   if (navigator.serviceWorker) navigator.serviceWorker.ready.then(show).catch(() => { try { new Notification(title, { body }); } catch (e) { /* sin notificaciones */ } });
 }
 
-// Mira tiendas (al instante) y Discogs (los deseos que llevan 6 h sin consultarse, de uno en uno). Avisa de lo nuevo.
+// Mira las tiendas (catálogos descargados) y avisa de lo que acaba de aparecer en stock o preventa. Discogs no cuenta.
 async function wishCheck() {
   if (state.wishBusy || !state.wish.some(w => w.status === 'wanted')) { updateBadge(); return; }
   state.wishBusy = true;
   try {
-    let r = W.checkAll(state.wish, { storeIndex: state.storeIndex });
-    const dgMap = {};
-    if (discogs.hasToken() && navigator.onLine !== false) {
-      const stale = r.list.filter(w => W.needsDiscogs(w)).slice(0, 6);
-      for (const w of stale) {
-        try { dgMap[w.id] = w.kind === 'release' && w.discogsId ? await discogs.releaseStats(w.discogsId, config.currency)
-          : await discogs.lookup({ ...w, key: C.albumKey(w.artist, w.name) }, config.currency).then(v => ({ forSale: v.none ? 0 : (v.forSale || 0), lowest: v.none ? null : v.lowest, at: Date.now() })); }
-        catch (e) { break; }        // límite o token: se reintenta más tarde
-      }
-    }
-    const r2 = Object.keys(dgMap).length ? W.checkAll(state.wish, { storeIndex: state.storeIndex, dgMap }) : r;
-    state.wish = r2.list;
+    const r = W.checkAll(state.wish, { storeIndex: state.storeIndex });
+    state.wish = r.list;
     await saveWish();
-    const alerts = [...new Map([...r.alerts, ...r2.alerts].map(a => [a.item.id, a])).values()];
-    if (alerts.length) notifyAlerts(alerts);
+    if (r.alerts.length) notifyAlerts(r.alerts);
     updateBadge();
     if (state.tab === 'comprar') render();
   } finally { state.wishBusy = false; }

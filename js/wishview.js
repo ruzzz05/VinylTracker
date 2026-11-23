@@ -43,8 +43,6 @@ function availability(ctx, w) {
   const chips = [];
   const best = C.bestOffer(offers);
   if (best) chips.push(h('span', { class: 'chip ok' }, `${best.preorder && !best.available ? 'Preventa' : 'En stock'} · ${best.store} ${C.money(best.price)}`));
-  const dg = w.dg;
-  if (dg && dg.forSale > 0) chips.push(h('span', { class: 'chip ok' }, `Discogs: ${dg.forSale} a la venta` + (dg.lowest != null ? ` desde ${C.money(dg.lowest)}` : '')));
   if (!chips.length) chips.push(h('span', { class: 'chip' }, w.checkedAt ? 'No disponible ahora' : 'Sin comprobar'));
   return chips;
 }
@@ -63,7 +61,7 @@ function wishRow(ctx, w) {
 export function wishView(ctx) {
   const root = h('div');
   const list = ctx.state.wish.filter(w => w.status === 'wanted');
-  const live = x => W.liveOffers(x, ctx.state.storeIndex).length + (x.dg && x.dg.forSale > 0 ? 1 : 0);
+  const live = x => W.liveOffers(x, ctx.state.storeIndex).length;
   list.sort((a, b) => (live(b) > 0) - (live(a) > 0) || b.addedAt - a.addedAt);
 
   root.append(h('div', { class: 'actions' },
@@ -72,7 +70,7 @@ export function wishView(ctx) {
   root.append(notifyCard(ctx));
   if (!list.length) {
     root.append(h('div', { class: 'empty' }, h('p', null, 'Aquí van los vinilos que quieres, sean un álbum cualquiera o una edición concreta.'),
-      h('p', { class: 'muted' }, 'Te aviso cuando aparezcan en stock o en preventa en las tiendas, o cuando haya copias a la venta en Discogs.')));
+      h('p', { class: 'muted' }, 'Te aviso cuando aparezcan en stock o en preventa en las tiendas, .')));
     return root;
   }
   const n = list.filter(w => live(w) > 0).length;
@@ -120,7 +118,6 @@ export function itemSheet(ctx, id) {
           h('div', { style: 'text-align:right' }, h('b', null, C.money(o.price)), h('small', { class: 'own' }, o.preorder && !o.available ? 'Preventa' : 'En stock'),
             h('a', { href: safeUrl(o.url), target: '_blank', rel: 'noopener' }, 'Abrir'))))
           : h('p', { class: 'muted' }, `Ahora mismo no está en ${ctx.storeNames()}.`),
-        w.dg && w.dg.forSale > 0 ? h('div', { class: 'stat' }, h('span', null, 'Discogs'), h('b', null, `${w.dg.forSale} a la venta` + (w.dg.lowest != null ? ` desde ${C.money(w.dg.lowest)}` : ''))) : null,
         h('div', { class: 'offer' }, h('div', null, h('b', null, 'Fnac'), h('small', null, 'Búscalo a mano')), h('a', { href: C.fnacUrl(w), target: '_blank', rel: 'noopener' }, 'Buscar')),
         h('div', { class: 'offer' }, h('div', null, h('b', null, 'El Corte Inglés'), h('small', null, 'Búscalo a mano')), h('a', { href: C.corteInglesUrl(w), target: '_blank', rel: 'noopener' }, 'Buscar'))),
     bought ? null : [h('label', null, 'Al comprarlo'), price],

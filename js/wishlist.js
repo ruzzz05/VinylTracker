@@ -50,28 +50,24 @@ export const wantedKeys = list => keysOf(list, 'wanted');
 // Ofertas de tienda con stock o preventa para este elemento
 export const liveOffers = (w, storeIndex) => matchStores(w, storeIndex || []).filter(o => o.available || o.preorder);
 
-// Qué está "disponible" ahora: claves 'tienda:URL' y 'discogs' (hay copias a la venta)
-export function liveKeys(w, offers, dg) {
-  return [...offers.map(o => 'store:' + o.url), ...(dg && dg.forSale > 0 ? ['discogs'] : [])];
-}
+// Qué está "disponible" ahora: solo las tiendas (clave 'store:URL'). Discogs NO cuenta.
+export const liveKeys = (w, offers) => offers.map(o => 'store:' + o.url);
 
 // Comprueba un elemento. Devuelve { item, fresh } donde `fresh` son las claves que acaban de aparecer.
 // Primera comprobación: solo anota lo que ya había (sin avisar). Lo que deja de estar y vuelve, avisa otra vez.
-export function checkItem(w, { storeIndex, dg, now = Date.now() }) {
+export function checkItem(w, { storeIndex, now = Date.now() }) {
   const offers = liveOffers(w, storeIndex);
-  const dgNow = dg === undefined ? w.dg : dg;      // undefined = no se consultó Discogs esta vez: se conserva lo último
-  const live = liveKeys(w, offers, dgNow);
-  const firstDg = w.dg == null;                    // primera vez que se mira Discogs: se anota, sin avisar de lo que ya estaba a la venta
-  const fresh = w.notified === null ? [] : live.filter(k => !w.notified.includes(k) && !(k === 'discogs' && firstDg));
-  return { item: { ...w, notified: live, dg: dgNow, checkedAt: now }, fresh, offers };
+  const live = liveKeys(w, offers);
+  const fresh = w.notified === null ? [] : live.filter(k => !w.notified.includes(k));
+  return { item: { ...w, notified: live, checkedAt: now }, fresh, offers };
 }
 
 // Recorre la lista de deseos (no los comprados). -> { list, alerts: [{ item, fresh, offers }] }
-export function checkAll(list, { storeIndex, dgMap = {}, now = Date.now() }) {
+export function checkAll(list, { storeIndex, now = Date.now() }) {
   const alerts = [];
   const out = list.map(w => {
     if (w.status !== 'wanted') return w;
-    const r = checkItem(w, { storeIndex, dg: dgMap[w.id], now });
+    const r = checkItem(w, { storeIndex, now });
     if (r.fresh.length) alerts.push({ item: r.item, fresh: r.fresh, offers: r.offers });
     return r.item;
   });
@@ -82,13 +78,8 @@ export function checkAll(list, { storeIndex, dgMap = {}, now = Date.now() }) {
 export function alertText(a) {
   const where = [];
   for (const o of a.offers.filter(o => a.fresh.includes('store:' + o.url))) where.push(`${o.store}${o.preorder && !o.available ? ' (preventa)' : ''}`);
-  if (a.fresh.includes('discogs')) where.push('Discogs');
   return `${a.item.name} · ${a.item.artist}: ya disponible en ${[...new Set(where)].join(', ')}`;
 }
-
-// ¿Hay que volver a mirar Discogs? (cada 6 h como mucho) y solo para los deseados
-export const DG_TTL = 6 * 3600 * 1000;
-export const needsDiscogs = (w, now = Date.now()) => w.status === 'wanted' && (!w.dg || now - (w.dg.at || 0) > DG_TTL);
 
 // ---------- Discogs: resultados de búsqueda -> datos compactos ----------
 export function parseDiscogsResult(r) {

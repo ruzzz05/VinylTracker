@@ -256,7 +256,7 @@ await page.reload();
 await page.waitForSelector('#toast:not([hidden])');
 assert.match(await page.textContent('#toast'), /Pure.*ya disponible en Apparell/);
 await page.waitForSelector('.tabs .badge');
-assert.equal((await page.textContent('.tabs .badge')).trim(), '2');         // Pure (tienda) y Motomami (copias en Discogs)
+assert.equal((await page.textContent('.tabs .badge')).trim(), '1');         // solo Pure (en stock en tienda): las copias de Discogs de Motomami no cuentan
 await page.waitForSelector('.row.wrow:has-text("Pure") .chip.ok');
 // marcar como comprado desde la ficha de un álbum sugerido: sale de las sugerencias y NO entra en la colección
 await page.click('.seg button:has-text("Sugeridos")');
