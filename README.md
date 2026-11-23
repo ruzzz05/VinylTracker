@@ -54,7 +54,7 @@ tools/build_site.py          Descarga los catálogos de las tiendas → data/sto
 .github/workflows/pages.yml  Publica en Pages a diario
 cli/                         Versión de línea de comandos en Python (opcional)
 ```
-**Tiendas**: Universal Music Online, Apparell y Sony Music Store (Shopify; para añadir otra basta una línea en `SHOPIFY_STORES`, de `cli/vinyl_tracker/stores.py`). No permiten CORS, así que un GitHub Action descarga
+**Tiendas**: Universal Music Online, Apparell, Sony Music Store y varias tiendas españolas pequeñas (las que no sean Shopify se saltan solas; el log del despliegue dice cuáles entran) (Shopify; para añadir otra basta una línea en `SHOPIFY_STORES`, de `cli/vinyl_tracker/stores.py`). No permiten CORS, así que un GitHub Action descarga
 sus catálogos de vinilos cada día y los publica junto a la web (`data/stores.json`).
 **Fnac** y **El Corte Inglés** bloquean las consultas automáticas: se ofrece un enlace de búsqueda.
 

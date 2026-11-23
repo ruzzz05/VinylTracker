@@ -11,6 +11,13 @@ SHOPIFY_STORES = {
     "Universal Music Online": "https://universalmusiconline.es/collections/vinilos",
     "Apparell": "https://apparell.com",
     "Sony Music Store": "https://store.sonymusic.es/collections/vinilos",
+    # Tiendas españolas de vinilo sin confirmar que sean Shopify: si no lo son, el despliegue las salta y avisa en el log.
+    "Discos Marcapasos": "https://www.discosmarcapasos.com",
+    "Discos EGA": "https://discosega.es",
+    "Sweet Grooves Records": "https://sweetgroovesrecords.com",
+    "Max Vinilos": "https://maxvinilos.com",
+    "La Casa del Disco": "https://www.lacasadeldisco.es",
+    "Discos Alta Fidelidad": "https://discosaltafidelidad.es",
 }
 # Para añadir otra tienda basta una línea más: sirve cualquier web hecha con Shopify (si tiene /products.json).
 # Si una tienda no responde o no es Shopify, se salta sin romper nada (el log del despliegue dice cuál).
