@@ -13,6 +13,8 @@ function db() {
         r.onerror = () => rej(r.error);
       } catch (e) { rej(e); }
     }).catch(() => null);
+    // IndexedDB puede quedarse colgada (p. ej. bloqueada por otra pestaña): pasados 4 s se usa solo la memoria
+    dbp = Promise.race([dbp, new Promise(res => setTimeout(() => res(null), 4000))]);
   }
   return dbp;
 }

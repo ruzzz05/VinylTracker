@@ -73,6 +73,7 @@ Sin el secreto, el sitio se publica igual y la pestaña Conciertos avisa de que 
 node --test tests/*.test.mjs                       # lógica
 python tools/build_site.py && python -m http.server -d _site   # sitio local
 NODE_PATH=$(npm root -g) node tests/e2e/smoke.mjs  # flujo completo en iPhone virtual (Playwright)
+NODE_PATH=$(npm root -g) node tests/e2e/sheets.mjs  # fichas y paneles: siempre se pueden cerrar (iPhone 14 y SE)
 NODE_PATH=$(npm root -g) node tools/make_icons.js  # regenera los iconos desde icons/logo.svg
 ```
 No hay dependencias que instalar para usar la app.

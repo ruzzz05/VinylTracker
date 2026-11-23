@@ -295,3 +295,7 @@ details.dt th, details.dt td { text-align: left; padding: 3px 4px; border-bottom
 
 /* Portada de álbum con carga posterior: el contenedor no cuenta para la maquetación */
 .covwrap { display: contents; }
+
+/* Botón «×» de las fichas: fijo arriba a la derecha dentro del panel */
+.sheet .panel { position: relative; }
+.sheet-x { position: sticky; top: 0; float: right; z-index: 2; width: 40px; height: 40px; margin: -6px -6px 0 8px; border: 0; border-radius: 50%; background: var(--surface2); color: var(--text); font: 400 26px/1 inherit; font-family: inherit; display: grid; place-items: center; cursor: pointer; padding: 0 0 3px; }

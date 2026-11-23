@@ -18,7 +18,7 @@ import { concertsView } from './concertsview.js';
 import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 
-const VERSION = '1.8.1';
+const VERSION = '1.8.2';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -369,10 +369,14 @@ function showBadExtras() {
     h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: closeSheet }, 'Cerrar')));
 }
 
+// «×» fijo arriba a la derecha: la ficha siempre se puede cerrar sin tener que bajar hasta «Cerrar»
+const closeX = () => h('button', { class: 'sheet-x', type: 'button', 'aria-label': 'Cerrar', title: 'Cerrar', onclick: () => closeSheet() }, '×');
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sheet').hidden) closeSheet(); });
+
 function showPanel(...kids) {
   if (state.scanStop) state.scanStop();
   const sheet = $('#sheet');
-  sheet.replaceChildren(h('div', { class: 'panel', role: 'dialog' }, ...kids));
+  sheet.replaceChildren(h('div', { class: 'panel', role: 'dialog' }, closeX(), ...kids));
   sheet.hidden = false;
   sheet.onclick = e => { if (e.target === sheet) closeSheet(); };
 }
@@ -635,7 +639,7 @@ function closeSheet() {
 async function openSheet(r) {
   const sheet = $('#sheet');
   const body = h('div');
-  const panel = h('div', { class: 'panel', role: 'dialog', 'aria-label': r.name }, body);
+  const panel = h('div', { class: 'panel', role: 'dialog', 'aria-label': r.name }, closeX(), body);
   sheet.replaceChildren(panel); sheet.hidden = false;
   sheet.onclick = e => { if (e.target === sheet) closeSheet(); };
 
@@ -676,9 +680,8 @@ async function openSheet(r) {
       paint(); if (state.tab === 'comprar') render();
     });
   };
-  const cached = await discogs.peek(r);
-  if (cached) state.prices.set(r.key, cached);
   paint();
+  discogs.peek(r).then(cached => { if (cached && !state.prices.has(r.key) && !$('#sheet').hidden && panel.isConnected) { state.prices.set(r.key, cached); paint(); } }).catch(() => {});
 }
 
 // ---------- Ajustes ----------
