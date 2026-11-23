@@ -17,7 +17,7 @@ cuáles te faltan, **cuánto cuestan** y **dónde hay stock** (o preventa).
   - **Comprados**: lo que ya has comprado, con fecha y precio opcional, **sin añadirlo a la colección**.
 - **Conciertos**: próximas fechas de tus 50 artistas más escuchados, por orden y agrupadas por mes, con filtro de país (España por defecto). Un GitHub Action descarga cada día los conciertos de música de Ticketmaster y los publica con la web; la app los cruza en el móvil con tus artistas. Sin claves en el móvil (ver «Conciertos» más abajo).
 - **Portadas** en canciones, álbumes y singles (aunque no pertenezcan a ningún álbum): la del álbum si ya se conoce y, si no, Spotify (si está conectado) o iTunes Search. Las imágenes se guardan en el móvil (hasta 600): al cambiar de pestaña o reabrir la app no se vuelven a descargar.
-- Ficha por álbum con enlaces a Discogs, tiendas, Fnac (búsqueda) y Spotify.
+- Ficha por álbum con enlaces a Discogs, tiendas, Fnac y El Corte Inglés (búsqueda) y Spotify.
 - **Fotos de artista** en la lista de Artistas: de Spotify si está conectado y, si no, de Discogs (con tu token). Se guardan en el móvil, así que cada artista se consulta una sola vez.
 - **En vivo** (con Spotify conectado): una tarjeta **«Suena ahora»** (con aviso de si ya lo tienes en vinilo) y un registro propio que se actualiza solo cada minuto y al volver a la app, y que se suma a Ranking y Estadísticas. Límites: Spotify solo recuerda tus últimas 50 canciones y la app solo puede consultarlas mientras está abierta, así que ábrela de vez en cuando; la duración de cada canción se toma completa (aproximada). Al importar un historial, lo que ya cubre deja de contarse dos veces.
 
@@ -56,7 +56,7 @@ cli/                         Versión de línea de comandos en Python (opcional)
 ```
 **Tiendas**: Universal Music Online y Apparell (Shopify). No permiten CORS, así que un GitHub Action descarga
 sus catálogos de vinilos cada día y los publica junto a la web (`data/stores.json`).
-**Fnac** bloquea las consultas automáticas: se ofrece un enlace de búsqueda.
+**Fnac** y **El Corte Inglés** bloquean las consultas automáticas: se ofrece un enlace de búsqueda.
 
 ## Conciertos (una sola vez)
 1. Crea una cuenta en <https://developer.ticketmaster.com> y copia la *Consumer Key* de tu app (gratis).

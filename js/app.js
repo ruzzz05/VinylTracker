@@ -18,7 +18,7 @@ import { concertsView } from './concertsview.js';
 import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 
-const VERSION = '1.7.4';
+const VERSION = '1.7.5';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -651,7 +651,9 @@ async function openSheet(r) {
             o.preorder ? 'Preventa' : o.available ? 'En stock' : 'Agotado'), h('a', { href: safeUrl(o.url), target: '_blank', rel: 'noopener' }, 'Abrir'))))
           : h('p', { class: 'muted' }, state.storeIndex.length ? 'No aparece en Universal Music Online ni en Apparell.' : 'Aún no hay datos de tiendas.'),
         h('div', { class: 'offer' }, h('div', null, h('b', null, 'Fnac'), h('small', null, 'Bloquea consultas automáticas: búscalo a mano')),
-          h('a', { href: C.fnacUrl(r), target: '_blank', rel: 'noopener' }, 'Buscar'))) : null,
+          h('a', { href: C.fnacUrl(r), target: '_blank', rel: 'noopener' }, 'Buscar')),
+        h('div', { class: 'offer' }, h('div', null, h('b', null, 'El Corte Inglés'), h('small', null, 'Bloquea consultas automáticas: búscalo a mano')),
+          h('a', { href: C.corteInglesUrl(r), target: '_blank', rel: 'noopener' }, 'Buscar'))) : null,
       !r.owned ? h('div', { class: 'card' }, h('h3', null, 'Discogs (mercado)'),
         d && !d.none ? [
           h('div', { class: 'stat' }, h('span', null, 'Copia más barata'), h('b', null, C.money(d.lowest))),
@@ -780,7 +782,7 @@ function vSettings() {
 
   // Datos
   root.append(h('div', { class: 'card' }, h('h3', null, 'Datos'),
-    h('p', { class: 'muted' }, `VinylTracker ${VERSION}. Todo se guarda en este dispositivo. Tiendas: Universal Music Online y Apparell (actualizadas a diario); Fnac no permite consultas automáticas.`),
+    h('p', { class: 'muted' }, `VinylTracker ${VERSION}. Todo se guarda en este dispositivo. Tiendas: Universal Music Online y Apparell (actualizadas a diario); Fnac y El Corte Inglés no permiten consultas automáticas (se ofrece su búsqueda).`),
     h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: checkUpdate }, 'Buscar actualización')),
     h('button', { class: 'btn danger', onclick: async () => {
       if (!confirm('¿Borrar todos los datos de VinylTracker de este dispositivo?')) return;

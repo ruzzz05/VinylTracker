@@ -208,3 +208,8 @@ test('splitExtras separa discos válidos de no válidos (con el motivo) y conser
   assert.equal(C.splitExtras('{{no json').corrupt, true);
   assert.equal(C.splitExtras('').corrupt, false); assert.deepEqual(C.splitExtras(JSON.stringify({ albums: [] })).raw, []);
 });
+
+test('corteInglesUrl: búsqueda con artista, álbum limpio y «vinilo»', () => {
+  const u = C.corteInglesUrl({ artist: 'Rosalía', name: 'Motomami (Deluxe)' });
+  assert.match(u, /^https:\/\/www\.elcorteingles\.es\/search-nwx\/1\/\?s=Rosal%C3%ADa\+Motomami\+vinilo&stype=text_box$/);
+});

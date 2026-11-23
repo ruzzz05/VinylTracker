@@ -193,6 +193,9 @@ export function matchStores(album, index, { minAlbum = 0.99, minArtist = 0.5 } =
     .sort((x, y) => (y.available || y.preorder) - (x.available || x.preorder) || x.price - y.price);
 }
 
+export const corteInglesUrl = album =>
+  'https://www.elcorteingles.es/search-nwx/1/?s=' + encodeURIComponent(`${album.artist} ${cleanAlbum(album.name)} vinilo`).replace(/%20/g, '+') + '&stype=text_box';
+
 export const fnacUrl = album =>
   'https://www.fnac.es/SearchResult/ResultList.aspx?Search=' +
   encodeURIComponent(`${album.artist} ${cleanAlbum(album.name)} vinilo`).replace(/%20/g, '+');
