@@ -23,7 +23,7 @@ import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 import * as T from './tint.js';
 
-const VERSION = '1.15.0';
+const VERSION = '1.15.1';
 // Oscuro por defecto (es el diseño Tinta); «auto» sigue al sistema
 const applyTheme = v => { if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v === 'light' ? 'light' : 'dark'; };
 applyTheme(prefs.get('theme'));
@@ -245,7 +245,7 @@ function tintAlbum() {
 let tintToken = 0;
 function setTint(hex) { document.documentElement.style.setProperty('--tint', hex); }
 function applyTint() {
-  const a = tintAlbum(), me = ++tintToken;
+  const a = prefs.get('tintMode') === 'cover' ? tintAlbum() : null, me = ++tintToken;      // por defecto, azul fijo; «según portada» es opcional
   if (!a) return setTint(T.DEFAULT_TINT);
   const url = a.image && imgcache.resolve(a.image);
   const known = url && T.peekTint(url);
@@ -912,7 +912,10 @@ function vSettings() {
   const theme = h('select', { 'aria-label': 'Tema' }, [['', 'Oscuro'], ['light', 'Claro'], ['auto', 'Automático (del sistema)']].map(([v, l]) => h('option', { value: v }, l)));
   theme.value = prefs.get('theme');
   theme.addEventListener('change', () => { prefs.set('theme', theme.value); applyTheme(theme.value); });
-  root.append(h('div', { class: 'card' }, h('h3', null, 'Tema'), theme));
+  const tintSel = h('select', { 'aria-label': 'Color de fondo' }, [['', 'Azul'], ['cover', 'Según la portada']].map(([v, l]) => h('option', { value: v }, l)));
+  tintSel.value = prefs.get('tintMode');
+  tintSel.addEventListener('change', () => { prefs.set('tintMode', tintSel.value); applyTint(); });
+  root.append(h('div', { class: 'card' }, h('h3', null, 'Tema'), theme, h('h3', { style: 'margin-top:14px' }, 'Color de fondo'), tintSel));
 
   // Datos
   root.append(h('div', { class: 'card' }, h('h3', null, 'Datos'),

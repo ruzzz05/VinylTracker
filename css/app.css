@@ -1,7 +1,7 @@
 /* Tinta: oscuro por defecto; cada pantalla toma el color de la portada que la protagoniza (--tint, animable) */
-@property --tint { syntax: '<color>'; inherits: true; initial-value: #2a9d8f; }
+@property --tint { syntax: '<color>'; inherits: true; initial-value: #3b6fd8; }
 :root {
-  --tint: #2a9d8f; transition: --tint .7s ease;
+  --tint: #3b6fd8; transition: --tint .7s ease;
   --bg: #0c0c14; --surface: #ffffff12; --surface2: #ffffff1c; --solid: #1b1b2b; --solid2: #26263a;
   --text: #f3f4fa; --muted: #a7aac4; --line: #ffffff1a;
   --acc1: color-mix(in srgb, var(--tint) 55%, #fff); --acc2: color-mix(in srgb, var(--tint) 55%, #fff); --acc3: var(--tint);
@@ -437,3 +437,6 @@ img.cover.fade { animation: fade-in .35s ease both; }
 .skel .sk.m { height: 30px; width: 58px; justify-self: end; }
 .skel-list > li:nth-child(2) .sk.l1 { width: 55%; } .skel-list > li:nth-child(3) .sk.l1 { width: 80%; } .skel-list > li:nth-child(4) .sk.l1 { width: 62%; }
 @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+
+/* El contador sobre «Comprar»: azul fijo, no depende del color de ambiente */
+.tabs .badge, .dock .badge { background: #3b82f6; color: #fff; box-shadow: 0 0 0 2px var(--solid); }

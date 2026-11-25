@@ -53,7 +53,7 @@ export function hashTint(text) {
   return toHex(hslToRgb([Math.abs(h) % 360, 0.62, 0.5]));
 }
 
-export const DEFAULT_TINT = '#2a9d8f';
+export const DEFAULT_TINT = '#3b6fd8';
 
 // ---------- navegador ----------
 const mem = new Map();

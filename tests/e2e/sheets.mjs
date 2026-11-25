@@ -188,8 +188,10 @@ for (const device of ['iPhone 14', 'iPhone SE']) {
   assert.ok(labels.filter(l => l.on).every(l => l.w > 20) && labels.filter(l => !l.on).every(l => l.w < 2), 'solo la pestaña activa enseña su nombre');
   await page.click('[data-tab=conciertos]');
   await page.waitForTimeout(1200);
-  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--tint').trim()), 'rgb(42, 157, 143)', 'las pantallas sin portada vuelven al color base');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--tint').trim()), 'rgb(59, 111, 216)', 'las pantallas sin portada vuelven al color base');
   await page.click('[data-tab=comprar]');
+  await page.waitForTimeout(600);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--tint').trim()), 'rgb(59, 111, 216)', 'el color es azul fijo salvo que se elija «según la portada»');
   await page.waitForSelector('.list .row');
   await page.click('.list .row >> nth=0');
   await page.waitForSelector('.sheet .panel');

@@ -67,7 +67,8 @@ export function wishView(ctx) {
   root.append(h('div', { class: 'actions' },
     h('button', { class: 'btn', onclick: () => addSheet(ctx) }, '+ Añadir vinilo'),
     h('button', { class: 'btn sec', onclick: () => scanSheet(ctx) }, 'Escanear código')));
-  root.append(notifyCard(ctx));
+  const nc = notifyCard(ctx);
+  if (nc) root.append(nc);
   if (!list.length) {
     root.append(h('div', { class: 'empty' }, h('p', null, 'Aquí van los vinilos que quieres.'),));
     return root;

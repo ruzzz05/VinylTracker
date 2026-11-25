@@ -286,7 +286,7 @@ assert.equal((await page.textContent('.tabs .badge')).trim(), '1');         // s
 await page.waitForSelector('.row.wrow:has-text("Pure") .chip.ok');
 // marcar como comprado desde la ficha de un álbum sugerido: sale de las sugerencias y NO entra en la colección
 await page.click('.seg button:has-text("Sugeridos")');
-await page.waitForSelector('.list .row');
+await page.waitForSelector('.list .row:not(.skel)');
 assert.match(await page.textContent('.list .row >> nth=0'), /Nevermind/);
 await page.click('.list .row >> nth=0');
 await page.click('.sheet >> text=✓ Ya lo compré');
