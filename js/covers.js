@@ -5,7 +5,7 @@
 import { fold, tokens, albumKey } from './core.js';
 import * as store from './storage.js';
 import * as spotify from './spotify.js';
-import { h, safeUrl } from './dom.js';
+import { h, safeImg } from './dom.js';
 import { cachedImg } from './imgcache.js';
 
 const TTL_HIT = 60 * 86400000, TTL_MISS = 3 * 86400000;
@@ -133,10 +133,10 @@ function coverBox(kind, t, known, { cls = '', wrapCls = 'avwrap', url = '' } = {
   const wrap = h('div', { class: wrapCls });
   const img = u => cachedImg(u, { cls: 'cover ' + cls, onFail: () => wrap.replaceChildren(ph()) });
   const sync = url || (kind === 'track' ? t.album && known && known[albumKey(t.artist, t.album)] : known && known[albumKey(t.artist, t.name)]) || peekCover(kind, t);
-  if (sync && safeUrl(sync) !== '#') { wrap.append(img(sync)); return wrap; }
+  if (sync && safeImg(sync) !== '#') { wrap.append(img(sync)); return wrap; }
   wrap.append(ph());
   cover(kind, t, known).then(u => {
-    if (!u || safeUrl(u) === '#') return;
+    if (!u || safeImg(u) === '#') return;
     const el = cachedImg(u, { cls: 'cover ' + cls, lazy: false });
     el.addEventListener('load', () => wrap.replaceChildren(el));      // solo se cambia si la imagen carga de verdad
   }).catch(() => {});

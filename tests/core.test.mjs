@@ -234,3 +234,13 @@ test('mergeCollection conserva la marca de disco manual', () => {
   const out = C.mergeCollection([], [m]);
   assert.equal(out[0].manual, true); assert.equal(out[0].extra, true);
 });
+
+test('safeImg: https e imágenes incrustadas sí; scripts y enlaces raros no', async () => {
+  const { safeImg, safeUrl } = await import('../js/dom.js');
+  assert.equal(safeImg('https://i.scdn.co/a.jpg'), 'https://i.scdn.co/a.jpg');
+  assert.equal(safeImg('data:image/svg+xml;base64,AAAA'), 'data:image/svg+xml;base64,AAAA');
+  assert.equal(safeImg('data:text/html;base64,AAAA'), '#');
+  assert.equal(safeImg('javascript:alert(1)'), '#');
+  assert.equal(safeImg(''), '#');
+  assert.equal(safeUrl('data:image/png;base64,AAAA'), '#');            // para enlaces nunca
+});

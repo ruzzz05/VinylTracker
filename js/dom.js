@@ -13,6 +13,8 @@ export function h(tag, props, ...kids) {
 }
 
 export const safeUrl = u => (/^https?:\/\//i.test(u || '') ? u : '#');
+// Para <img>: además de https admite imágenes incrustadas (data:image/…), que no sirven para enlaces
+export const safeImg = u => (/^(https?:\/\/|data:image\/(png|jpeg|webp|gif|svg\+xml)[;,])/i.test(u || '') ? u : '#');
 
 // ---------- Tooltip de los gráficos: un solo globo; en el móvil se abre al tocar y se cierra al tocar fuera ----------
 let tip, tipAt = 0;

@@ -3,7 +3,7 @@
 // 2) En el móvil (IndexedDB): se guardan hasta MAX imágenes, así siguen ahí al volver a abrir la app o sin conexión.
 // Si el servidor de la imagen no permite descargarla (CORS), simplemente se usa la dirección original.
 import * as store from './storage.js';
-import { h, safeUrl } from './dom.js';
+import { h, safeImg } from './dom.js';
 
 const MAX = 600, MAX_BYTES = 1.5e6;
 const mem = new Map();            // url -> objectURL
@@ -41,7 +41,7 @@ async function keep(url) {
 
 // <img> con portada (lazy:false para imágenes que se cargan sin estar aún en pantalla). Si ya se vio, sale al instante; si falla, llama a onFail.
 export function cachedImg(url, { cls = '', onFail, onLoad, lazy = true } = {}) {
-  const u = safeUrl(url), known = isCached(u);
+  const u = safeImg(url), known = isCached(u);
   const img = h('img', { class: (cls + (known ? '' : ' fade')).trim(), src: resolve(u), alt: '', referrerpolicy: 'no-referrer', decoding: known ? 'sync' : 'async', loading: known || !lazy ? null : 'lazy' });
   img.addEventListener('load', () => { seen.add(u); keep(u); if (onLoad) onLoad(img); });
   if (onFail) img.addEventListener('error', () => onFail(img));

@@ -71,7 +71,7 @@ export function parseCollectionCsv(text, imageBase = '') {
     const url = (r[col('url')] || '').trim();
     out.push({
       artist, name,
-      image: /^https?:/.test(img) ? img : img ? imageBase + img : '',
+      image: /^(https?:|data:image\/)/.test(img) ? img : img ? imageBase + img : '',
       tags: (r[col('tags')] || '').split('|').map(t => t.trim()).filter(Boolean),
       url, id: spotifyAlbumId(url)
     });
