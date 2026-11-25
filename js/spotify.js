@@ -170,3 +170,57 @@ export async function searchAlbum(artist, name) {
 // Datos completos de un álbum y de su artista (año, sello, estilos…) para «Añadir disco»
 export const fetchAlbum = id => get('/albums/' + encodeURIComponent(id), {});
 export const fetchArtist = id => get('/artists/' + encodeURIComponent(id), {});
+
+// ---------- Playlists (hace falta reconectar Spotify una vez para dar el permiso) ----------
+const scopeErr = () => Object.assign(new Error('Falta el permiso de playlists: ve a Ajustes → Spotify y pulsa «Reconectar».'), { code: 'scope' });
+
+async function call(method, path, { params, body } = {}) {
+  const q = params ? '?' + new URLSearchParams(params) : '';
+  const r = await fetch(API + path + q, { method, headers: { Authorization: 'Bearer ' + await token(), ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401 || r.status === 403) throw scopeErr();
+  if (r.status === 404) throw Object.assign(new Error('Spotify no encontró eso (404).'), { status: 404 });
+  if (!r.ok) throw new Error('Spotify respondió ' + r.status);
+  return r.status === 204 ? {} : r.json();
+}
+
+// Tus playlists -> [{ id, name, total, owner }]
+export async function myPlaylists() {
+  const out = [];
+  for (let offset = 0; offset < 500; offset += 50) {
+    const d = await call('GET', '/me/playlists', { params: { limit: 50, offset } });
+    for (const p of d.items || []) if (p) out.push({ id: p.id, name: p.name || '(sin nombre)', total: ((p.tracks || p.items || {}).total) || 0, owner: (p.owner || {}).display_name || '' });
+    if (!d.next) break;
+  }
+  return out;
+}
+
+// Canciones de una playlist (en bruto, de 100 en 100; hasta 5000). Si /tracks no responde, prueba /items.
+export async function playlistItems(id, progress = () => {}) {
+  const out = [];
+  let base = `/playlists/${encodeURIComponent(id)}/tracks`;
+  for (let offset = 0; offset < 5000; offset += 100) {
+    let d;
+    try { d = await call('GET', base, { params: { limit: 100, offset, fields: 'items(added_at,track(name,uri,type,is_local,artists(name),album(name))),next,total' } }); }
+    catch (e) { if (e.status === 404 && offset === 0 && base.endsWith('/tracks')) { base = `/playlists/${encodeURIComponent(id)}/items`; offset -= 100; continue; } throw e; }
+    out.push(...(d.items || []));
+    progress(out.length, d.total || out.length);
+    if (!d.next) break;
+  }
+  return out;
+}
+
+export async function createPlaylist(name, description) {
+  return call('POST', '/me/playlists', { body: { name, description, public: false } });
+}
+
+export async function addToPlaylist(id, uris) {
+  for (let i = 0; i < uris.length; i += 100) await call('POST', `/playlists/${encodeURIComponent(id)}/tracks`, { body: { uris: uris.slice(i, i + 100) } });
+}
+
+// URI de una canción buscándola por nombre y artista (null si no aparece)
+export async function findTrackUri(artist, name) {
+  const items = await searchTrack(artist, name);
+  const n = String(name).toLowerCase(), a = String(artist).toLowerCase();
+  const hit = items.find(t => String(t.name).toLowerCase() === n && (t.artists || []).some(x => String(x.name).toLowerCase() === a)) || items[0];
+  return hit ? hit.uri : null;
+}

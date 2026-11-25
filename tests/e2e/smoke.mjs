@@ -32,6 +32,7 @@ writeFileSync(path.join(SHOTS, 'history.json'), JSON.stringify(HISTORY));
 const OWNER = 'eFXlrMGYWIRQkAkzLr5ex5J4aS13';
 const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body) });
 let discogsCalls = 0;
+const plAdded = [];
 
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ ...devices['iPhone 14'], locale: 'es-ES' });
@@ -107,6 +108,14 @@ await ctx.route('https://api.spotify.com/v1/**', r => {
   if (/\/v1\/albums\/[A-Za-z0-9]{22}/.test(u)) return json(r, { id: '7yyRTcZmCiyzzJlNzGC9Ol', name: 'Álbum Completo', release_date: '2021-03-05', label: 'Sello Spotify', total_tracks: 12, album_type: 'album',
     artists: [{ id: 'ART1', name: 'Artista Completo' }], images: [{ url: 'https://i.scdn.co/full-64', width: 64 }, { url: 'https://i.scdn.co/full-640', width: 640 }] });
   if (/\/v1\/artists\/ART1/.test(u)) return json(r, { id: 'ART1', name: 'Artista Completo', genres: ['indie pop', 'bedroom pop'] });
+  if (r.request().method() === 'POST' && /\/me\/playlists/.test(u)) return json(r, { id: 'NEWPL', external_urls: { spotify: 'https://open.spotify.com/playlist/NEWPL' } });
+  if (r.request().method() === 'POST' && /\/playlists\/NEWPL\/tracks/.test(u)) { plAdded.push(...JSON.parse(r.request().postData()).uris); return json(r, { snapshot_id: 'x' }); }
+  if (/\/me\/playlists/.test(u)) return json(r, { items: [{ id: 'PL1', name: 'playlist 01', tracks: { total: 3 }, owner: { display_name: 'yo' } }], next: null });
+  if (/\/playlists\/PL1\/tracks/.test(u)) return json(r, { total: 3, next: null, items: [
+    { added_at: '2023-05-10T10:00:00Z', track: { name: 'Canción Perdida A', uri: 'spotify:track:LOST1', artists: [{ name: 'Artista Perdido' }], album: { name: 'Disco Perdido' } } },
+    { added_at: '2023-06-10T10:00:00Z', track: { name: 'Canción Perdida B', uri: 'spotify:track:LOST2', artists: [{ name: 'Artista Perdido' }], album: { name: 'Disco Perdido' } } },
+    { added_at: '2023-06-11T10:00:00Z', track: { name: 'Otra', uri: 'spotify:track:LOST3', artists: [{ name: 'Artista Perdido' }], album: { name: 'Disco Perdido' } } }] });
+  if (u.includes('/search') && /type=track/.test(u)) return json(r, { tracks: { items: [{ name: 'tema 0', uri: 'spotify:track:FOUND', artists: [{ name: 'Viejo' }], album: { images: [] } }] } });
   if (u.includes('/me/top/tracks')) return json(r, { items: [{ album: alb('s1', 'La Deriva', 'Vetusta Morla') }, { album: alb('s2', 'Nevermind', 'Nirvana') }] });
   if (u.includes('/search')) return json(r, { artists: { items: [{ name: 'Nirvana', popularity: 80, images: [{ url: 'https://i.scdn.co/art-big' }, { url: 'https://i.scdn.co/art-mid' }] }] } });
   if (u.includes('recently-played')) return json(r, { items: recent });
@@ -161,6 +170,8 @@ await view('Estadísticas');
 await page.waitForSelector('.hero .big');
 assert.equal((await page.$$('.cc')).length, 2, 'deben salir las dos gráficas de columnas');
 assert.ok((await page.$$('.hm-c')).length >= 168, 'falta el mapa de calor');
+await page.locator('.cc-col').nth(11).scrollIntoViewIfNeeded();
+await page.waitForTimeout(400);                     // el scroll oculta el globo: se espera a que termine antes de tocar
 await page.click('.cc-col >> nth=11');
 await page.waitForSelector('.tip:not([hidden])');
 assert.match(await page.textContent('.tip'), /min|h/);
@@ -468,6 +479,42 @@ await page.waitForSelector('.sheet', { state: 'hidden' });
 assert.ok(patched && patched.fields.json.stringValue.includes('Álbum Completo') && patched.fields.json.stringValue.includes('"year":2021') && patched.fields.json.stringValue.includes('bedroom pop'), 'no se guardó con toda la info en mi-app');
 await page.screenshot({ path: path.join(SHOTS, '7e-spotify-completo.png') });
 await page.click('[data-tab=ranking]');
+
+// ---------- Olvidados: artistas / canciones que escuchaste mucho y hace tiempo que no suenan ----------
+await page.click('[data-tab=ranking]');
+await page.click('.seg button:has-text("Olvidados")');
+await page.waitForSelector('.frow');
+assert.match(await page.textContent('#view'), /Viejo/);                           // 30 reproducciones en enero de 2024
+assert.ok(!/Nirvana/.test(await page.textContent('.list')), 'lo que suena ahora no es un olvidado');
+// playlist como fuente (fechas de «añadida»)
+await page.click('text=Elegir playlists');
+await page.waitForSelector('.sheet >> text=playlist 01');
+await page.check('.sheet input[type=checkbox]');
+await page.click('.sheet >> text=Importar las marcadas');
+await page.waitForSelector('.sheet', { state: 'hidden' });
+await page.waitForSelector('.frow:has-text("Artista Perdido")');
+assert.match(await page.textContent('.frow:has-text("Artista Perdido")'), /en playlist/);
+await page.screenshot({ path: path.join(SHOTS, '7f-olvidados.png') });
+// «No»: se oculta y queda en la lista de excluidos (y se puede volver a incluir)
+await page.click('.frow:has-text("Viejo") >> text=No');
+await page.waitForFunction(() => !/Viejo/.test(document.querySelector('.list').textContent));
+await page.click('summary:has-text("Artistas excluidos")');
+assert.match(await page.textContent('details.dt'), /Viejo/);
+await page.click('details.dt .chip:has-text("Viejo")');
+await page.waitForSelector('.frow:has-text("Viejo")');
+await page.click('.frow:has-text("Viejo") >> text=No');
+// crear una playlist con lo que se ve
+await page.click('text=Crear playlist con esto');
+await page.waitForSelector('.sheet >> text=Playlist creada');
+assert.ok(plAdded.includes('spotify:track:LOST1'), 'las canciones de la playlist usan su uri: ' + plAdded);
+await page.click('.sheet >> text=Cerrar');
+// canciones
+await page.locator('.seg').nth(1).getByText('Canciones', { exact: true }).click();          // el segundo selector es el de Olvidados (el primero es el de las vistas del ranking)
+await page.waitForSelector('.frow');
+assert.ok(!/Viejo/.test(await page.textContent('.list')), 'sus canciones también quedan ocultas');
+assert.match(await page.textContent('#view'), /Canción Perdida/);
+await page.locator('.seg').nth(1).getByText('Artistas', { exact: true }).click();
+await page.click('.seg button:has-text("Álbumes")');
 
 // Vuelta de Spotify a una ventana SIN el intento guardado (iPhone: vuelve a Safari, no a la app):
 // debe enseñar "Casi listo" y CONSERVAR el código en la dirección para poder copiarla

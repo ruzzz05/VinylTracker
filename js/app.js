@@ -13,6 +13,7 @@ import * as L from './live.js';
 import { artistsView, tracksView, statsView } from './statsview.js';
 import * as W from './wishlist.js';
 import * as addview from './addview.js';
+import { rediscoverView, preload as preloadRediscover } from './rediscoverview.js';
 import * as addinfo from './albuminfo.js';
 import * as cloud from './cloud.js';
 import * as wv from './wishview.js';
@@ -20,7 +21,7 @@ import { concertsView } from './concertsview.js';
 import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 
-const VERSION = '1.9.2';
+const VERSION = '1.10.0';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -95,6 +96,7 @@ const rankingList = () => C.buildRanking({ history: state.effHistory, api: state
 
 async function loadAll() {
   imgcache.preload().catch(() => {});
+  preloadRediscover().catch(() => {});
   state.history = C.rekeyHistory(await store.get('history', {}));
   state.historyInfo = await store.get('historyInfo', null);
   state.stats = await store.get('stats', null);
@@ -174,7 +176,7 @@ function albumRow(r, i) {
     metric(r)));
 }
 
-const RANK_VIEWS = [['albums', 'Álbumes'], ['artists', 'Artistas'], ['tracks', 'Canciones'], ['stats', 'Estadísticas']];
+const RANK_VIEWS = [['albums', 'Álbumes'], ['artists', 'Artistas'], ['tracks', 'Canciones'], ['forgotten', 'Olvidados'], ['stats', 'Estadísticas']];
 
 function rankTabs() {
   return h('div', { class: 'seg', role: 'group', 'aria-label': 'Vista' },
@@ -195,6 +197,7 @@ function vRanking() {
   root.append(...[liveBar(), nowCard(), rankTabs()].filter(Boolean));
   const view = state.rankView;
   const goSettings = () => go('ajustes');
+  if (view === 'forgotten') { root.append(rediscoverView({ state, toast, showPanel, render: () => render(), go, closeSheet: () => closeSheet(), known: () => known() })); return root; }
   // El periodo vale para todas las vistas que usan el historial
   if (hasHistory || state.effStats) root.append(periodBar());
   if (view === 'artists') { root.append(artistsView({ stats: state.effStats, apiAlbums: state.apiAlbums, months: state.months, onImport: goSettings })); return root; }

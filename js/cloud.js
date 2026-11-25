@@ -6,7 +6,7 @@ import { prefs } from './storage.js';
 
 export const CHUNK = 700000;
 export const KEYS = ['wish', 'manual', 'live', 'history', 'prefs'];
-export const PREF_KEYS = ['theme', 'months', 'rankView', 'buyView', 'tab', 'concMonths', 'conc.country', 'discogs.user', 'filter'];
+export const PREF_KEYS = ['theme', 'months', 'rankView', 'buyView', 'tab', 'concMonths', 'conc.country', 'discogs.user', 'filter', 'rd.excluded', 'rd.months', 'rd.kind'];
 
 export async function pack(obj) {
   const cs = new CompressionStream('gzip'), w = cs.writable.getWriter();

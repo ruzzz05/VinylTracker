@@ -17,6 +17,6 @@ export const config = {
   },
   firestoreDoc: 'vinilos/coleccion',
   spotifyClientId: 'd48de50d984d42b78cb04ad64dea071c',
-  spotifyScopes: 'user-top-read user-read-recently-played user-library-read user-read-currently-playing',
+  spotifyScopes: 'user-top-read user-read-recently-played user-library-read user-read-currently-playing playlist-read-private playlist-read-collaborative playlist-modify-private',
   currency: 'EUR'
 };
