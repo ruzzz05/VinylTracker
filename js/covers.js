@@ -83,9 +83,18 @@ async function fetchCover(kind, t) {
   try {
     if (spotify.isConnected()) {
       try {
-        const u = kind === 'track' ? pickSpotifyTrack(await spotify.searchTrack(t.artist, t.name), t.artist, t.name)
-          : pickSpotifyAlbum(await spotify.searchAlbum(t.artist, t.name), t.artist, t.name);
-        if (u) return u;
+        if (kind === 'track') {
+          const u = pickSpotifyTrack(await spotify.searchTrack(t.artist, t.name), t.artist, t.name);
+          if (u) return u;
+        } else {
+          // Álbum o single: primero como álbum, luego búsqueda libre y, si es un single, como canción (su portada es la del single)
+          const nm = noSingle(t.name);
+          const u = pickSpotifyAlbum(await spotify.searchAlbum(t.artist, t.name), t.artist, t.name)
+            || pickSpotifyAlbum(await spotify.searchLoose(t.artist, nm, 'album'), t.artist, t.name)
+            || pickSpotifyTrack(await spotify.searchTrack(t.artist, nm), t.artist, nm)
+            || pickSpotifyTrack(await spotify.searchLoose(t.artist, nm, 'track'), t.artist, nm);
+          if (u) return u;
+        }
       } catch (e) { /* Spotify falla: se prueba con iTunes */ }
     }
     const term = `${t.artist} ${t.name}`;
@@ -110,10 +119,10 @@ function cover(kind, t, known = {}) {
   if (inflight.has(key)) return inflight.get(key);
   const p = (async () => {
     const c = await store.get(key);
-    if (c && Date.now() - c.at < (c.url ? TTL_HIT : TTL_MISS)) { mem.set(key, c.url); return c.url; }
+    if (c && Date.now() - c.at < (c.url ? TTL_HIT : TTL_MISS) && (c.url || c.v === 3)) { mem.set(key, c.url); return c.url; }
     if (navigator.onLine === false) return undefined;
     const url = await (chain = chain.then(() => fetchCover(kind, t), () => fetchCover(kind, t)));
-    if (url !== undefined) { mem.set(key, url); await store.set(key, { url, at: Date.now() }); }
+    if (url !== undefined) { mem.set(key, url); await store.set(key, { url, at: Date.now(), v: 3 }); }
     return url;
   })().finally(() => inflight.delete(key));
   inflight.set(key, p);

@@ -163,6 +163,11 @@ const q = x => String(x).replace(/"/g, '');
 export async function searchTrack(artist, track) {
   return ((await get('/search', { q: `track:"${q(track)}" artist:"${q(artist)}"`, type: 'track', limit: 5 })).tracks || {}).items || [];
 }
+// Búsqueda libre (sin filtros de campo), para los singles y títulos raros que la búsqueda estricta no encuentra
+export async function searchLoose(artist, name, type) {
+  const r = await get('/search', { q: `${q(artist)} ${q(name)}`, type, limit: 10 });
+  return ((type === 'album' ? r.albums : r.tracks) || {}).items || [];
+}
 export async function searchAlbum(artist, name) {
   return ((await get('/search', { q: `album:"${q(name)}" artist:"${q(artist)}"`, type: 'album', limit: 5 })).albums || {}).items || [];
 }

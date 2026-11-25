@@ -1,5 +1,5 @@
 // Service worker: la app abre sin conexión. Cambia VERSION al modificar archivos para forzar la actualización.
-const VERSION = 'v1.14.2';
+const VERSION = 'v1.14.3';
 const CACHE = `vinyltracker-${VERSION}`;
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'favicon.svg', 'css/app.css',
