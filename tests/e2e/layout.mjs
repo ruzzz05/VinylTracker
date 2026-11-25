@@ -27,12 +27,13 @@ async function open({ standalone }) {
 }
 const bar = page => page.$eval('.tabs', e => { const r = e.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom) }; });
 
-// 1) App instalada con el alto de iOS recortado: la barra debe llegar al final de la PANTALLA (852), sin hueco
+// 1) App instalada con el alto de iOS recortado: el fondo llega al final de la pantalla (852) pero el menú queda dentro de la ventana visible (793), sin cortarse
 {
   const { ctx, page } = await open({ standalone: true });
   await page.waitForTimeout(400);
   const b = await bar(page);
-  assert.equal(b.bottom, 852, 'con el fix, la barra debe llegar al borde inferior de la pantalla: ' + JSON.stringify(b));
+  assert.equal(b.bottom, 793, 'la barra debe quedar pegada al borde de la ventana VISIBLE (iOS no pinta fuera de ella): ' + JSON.stringify(b));
+  assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--dock-gap')), '59px', 'el menú se sube la diferencia entre pantalla y ventana');
   const b0 = b;
   await page.$eval('#view', e => { e.scrollTop = 900; });
   // (la ventana de la prueba sí está recortada a 793, por eso se pulsa por código)

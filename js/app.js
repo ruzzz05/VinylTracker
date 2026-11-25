@@ -23,13 +23,13 @@ import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 import * as T from './tint.js';
 
-const VERSION = '1.13.4';
+const VERSION = '1.13.5';
 // Oscuro por defecto (es el diseño Tinta); «auto» sigue al sistema
 const applyTheme = v => { if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v === 'light' ? 'light' : 'dark'; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
 // (el de la barra de estado) y la barra inferior se queda flotando con un hueco debajo.
-// Se usa el alto real de la pantalla; en el navegador normal no se toca nada.
+// Se usa el alto real de la pantalla para el fondo; el menú se mantiene dentro de la ventana visible. En el navegador normal no se toca nada.
 const isStandalone = () => navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
 function fixAppHeight() {
   if (!isStandalone()) return;
@@ -37,6 +37,9 @@ function fixAppHeight() {
   const landscape = window.matchMedia && matchMedia('(orientation: landscape)').matches;
   const full = landscape ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
   if (full > 0) document.documentElement.style.setProperty('--app-h', full + 'px');
+  // iOS no pinta fuera de la ventana real (innerHeight): si la pantalla es más alta, el menú se sube esa diferencia para que nunca quede cortado
+  const gap = Math.max(0, full - innerHeight);
+  document.documentElement.style.setProperty('--dock-gap', (gap > 8 ? gap : 0) + 'px');
 }
 fixAppHeight();
 for (const ev of ['resize', 'orientationchange', 'pageshow']) window.addEventListener(ev, fixAppHeight);

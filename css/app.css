@@ -61,7 +61,7 @@ p { margin: 8px 0; }
 .muted { color: var(--muted); font-size: .88rem; }
 a { color: var(--acc1); }
 
-.tabs { flex: none; position: relative; z-index: 20; height: calc(var(--tabs-h) + env(safe-area-inset-bottom)); padding: 0 14px calc(10px + env(safe-area-inset-bottom)); display: flex; align-items: flex-end; }
+.tabs { flex: none; position: relative; z-index: 20; margin-bottom: var(--dock-gap, 0px); padding: 0 14px calc(10px + max(0px, env(safe-area-inset-bottom) - var(--dock-gap, 0px))); display: flex; align-items: flex-end; }
 .dock {
   display: flex; align-items: center; justify-content: space-between; gap: 2px; width: 100%; max-width: 520px; margin: 0 auto; padding: 7px;
   border-radius: 99px; background: var(--glass-strong); backdrop-filter: blur(20px) saturate(1.4); -webkit-backdrop-filter: blur(20px) saturate(1.4);
@@ -344,7 +344,7 @@ details.dt th, details.dt td { text-align: left; padding: 3px 4px; border-bottom
 .card.st .row.static { background: transparent; padding: 4px 0; }
 
 /* ---------- Olvidados: botón de crear playlist siempre a mano ---------- */
-.btn.wide { width: 100%; padding: 14px 16px; margin: 2px 0 12px; }
+.btn.wide { width: 100%; padding: 14px 16px; margin: 6px 0 2px; }
 
 /* ================= Tinta: cristal, botones claros y detalles ================= */
 .seg { background: var(--glass); border: 1px solid var(--glass-line); border-radius: 99px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }

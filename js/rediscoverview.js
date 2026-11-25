@@ -41,9 +41,10 @@ export function rediscoverView(ctx) {
     return root;
   }
 
-  // texto y botón de crear playlist arriba: se ven sin bajar por la lista
   root.append(h('p', { class: 'muted' }, `Sin escuchar desde hace ${MONTHS.find(x => x[0] === months)[1]}. «No» oculta un artista.`));
-  if (list.length) root.append(h('button', { class: 'btn wide', type: 'button', onclick: () => createPlaylistFlow(ctx, st.effStats, list, kind, plist) }, '▶ Crear playlist con esto'));
+  // «Crear playlist» va justo debajo de «Elegir playlists», dentro de la misma tarjeta
+  const createBtn = list.length ? h('button', { class: 'btn wide', type: 'button', onclick: () => createPlaylistFlow(ctx, st.effStats, list, kind, plist) }, '▶ Crear playlist con esto') : null;
+  root.append(playlistCard(ctx, redo, createBtn));
 
   if (!list.length) root.append(h('div', { class: 'empty' }, 'No hay nada que cumpla eso. Prueba con menos meses.'));
   else {
@@ -59,8 +60,6 @@ export function rediscoverView(ctx) {
       h('button', { class: 'btn sec sm', type: 'button', 'aria-label': `No me interesa ${r.artist}`, title: kind === 'artists' ? 'No me interesa este artista' : 'No me interesa este artista (se ocultan también sus canciones)',
         onclick: () => { writeExcluded([...excluded, r.artist]); ctx.toast(`Ocultado: ${r.artist}`); redo(); } }, 'No'))))));
   }
-  root.append(playlistCard(ctx, redo));
-
   if (excluded.length) {
     root.append(h('details', { class: 'dt' }, h('summary', null, `Artistas excluidos (${excluded.length})`),
       h('div', { class: 'chips' }, excluded.map(n => h('button', { class: 'chip', type: 'button', title: 'Volver a incluir', onclick: () => { writeExcluded(excluded.filter(x => x !== n)); redo(); } }, n + ' ×'))),
@@ -70,14 +69,15 @@ export function rediscoverView(ctx) {
 }
 
 // ---------- playlists como fuente ----------
-function playlistCard(ctx, redo) {
+function playlistCard(ctx, redo, createBtn = null) {
   const ids = Object.keys(plists);
   return h('div', { class: 'card' }, h('h3', null, 'Playlists como fuente'),
     h('p', { class: 'muted' }, 'Sus canciones cuentan y la fecha en que las añadiste es la «última vez».'),
     ids.length ? h('div', { class: 'chips' }, ids.map(id => h('span', { class: 'chip ok' }, `${plists[id].name} · ${plists[id].tracks.length}`))) : null,
     !spotify.isConnected() ? h('p', { class: 'muted' }, 'Conecta Spotify en Ajustes para elegir playlists.')
       : h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: () => pickPlaylists(ctx, redo) }, ids.length ? 'Cambiar playlists' : 'Elegir playlists'),
-        ids.length ? h('button', { class: 'btn danger', onclick: async () => { plists = {}; await savePlists(); redo(); } }, 'Quitar todas') : null));
+        ids.length ? h('button', { class: 'btn danger', onclick: async () => { plists = {}; await savePlists(); redo(); } }, 'Quitar todas') : null),
+    createBtn);
 }
 
 async function pickPlaylists(ctx, redo) {

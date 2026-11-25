@@ -503,10 +503,10 @@ await page.click('.sheet >> text=Importar las marcadas');
 await page.waitForSelector('.sheet', { state: 'hidden' });
 await page.waitForSelector('.frow:has-text("Artista Perdido")');
 assert.match(await page.textContent('.frow:has-text("Artista Perdido")'), /en playlist/);
-// el botón de crear playlist está arriba, justo bajo los selectores: se ve sin bajar por la lista
+// «Crear playlist» va justo debajo de «Cambiar playlists», dentro de la misma tarjeta y antes de la lista
 await page.evaluate(() => { document.querySelector('#view').scrollTop = 0; });
-{ const box = await page.locator('.btn.wide:has-text("Crear playlist")').boundingBox(), vp = page.viewportSize();
-  assert.ok(box && box.y >= 0 && box.y + box.height <= vp.height - 90, 'el botón de crear playlist no se ve sin bajar por la lista: ' + JSON.stringify(box)); }
+{ const pick = await page.locator('.card .btn:has-text("Cambiar playlists")').boundingBox(), make = await page.locator('.card .btn.wide:has-text("Crear playlist")').boundingBox(), row = await page.locator('.frow').first().boundingBox();
+  assert.ok(pick && make && row && make.y > pick.y && make.y < row.y, 'el botón de crear playlist debe estar bajo el de elegir y antes de la lista: ' + JSON.stringify({ pick, make, row })); }
 await page.screenshot({ path: path.join(SHOTS, '7f-olvidados.png') });
 // «No»: se oculta y queda en la lista de excluidos (y se puede volver a incluir)
 await page.click('.frow:has-text("Viejo") >> text=No');
