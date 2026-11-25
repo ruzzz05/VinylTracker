@@ -23,7 +23,7 @@ import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 import * as T from './tint.js';
 
-const VERSION = '1.15.1';
+const VERSION = '1.16.0';
 // Oscuro por defecto (es el diseño Tinta); «auto» sigue al sistema
 const applyTheme = v => { if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v === 'light' ? 'light' : 'dark'; };
 applyTheme(prefs.get('theme'));
@@ -85,7 +85,8 @@ const state = {
   now: undefined, nowError: '', liveBusy: false, liveError: '',
   csvAt: 0, syncing: false, syncError: '',
   prices: new Map(),          // key -> { discogs }
-  filter: 'todos', search: '',
+  filter: 'todos', search: '', buyMonths: Number(prefs.get('buyMonths', '12')), buyShown: 40,
+  vinyl: new Map(), vinylTried: new Set(), vinylRun: 0, vinylProgress: { running: false, done: 0, error: '' },
   priceProgress: { running: false, done: 0, total: 0, error: '' }, priceTried: new Set(), priceRun: 0, manual: [], cloudAt: 0, cloudError: '', cloudBusy: false, wish: [], buyView: prefs.get('buyView', 'sugeridos'), scanStop: null, wishBusy: false
 };
 
@@ -99,7 +100,7 @@ function recompute() {
 }
 
 // Ranking: se calcula una sola vez mientras no cambien los datos, y las ofertas de tienda solo cuando alguien las pide
-let rankMemo = { key: null, list: [] };
+const rankMemo = new Map();      // periodo (meses) -> { key, list }
 const offersCache = new WeakMap();
 const offersFor = r => {
   let m = offersCache.get(state.storeIndex);
@@ -108,15 +109,17 @@ const offersFor = r => {
   if (!o) m.set(r.key, o = C.matchStores(r, state.storeIndex));
   return o;
 };
-const rankingList = () => {
-  const key = [state.effHistory, state.apiAlbums, state.months, state.owned, state.storeIndex];
-  if (rankMemo.key && key.every((v, i) => v === rankMemo.key[i])) return rankMemo.list;
-  const list = C.buildRanking({ history: state.effHistory, api: state.apiAlbums, months: state.months }).map(r => {
+const rankingList = (months = state.months) => {
+  const key = [state.effHistory, state.apiAlbums, state.owned, state.storeIndex];
+  const memo = rankMemo.get(months);
+  if (memo && key.every((v, i) => v === memo.key[i])) return memo.list;
+  const list = C.buildRanking({ history: state.effHistory, api: state.apiAlbums, months }).map(r => {
     const o = { ...r, owned: C.isOwned(r, state.owned) };
     Object.defineProperty(o, 'offers', { enumerable: true, configurable: true, get: () => offersFor(r) });
     return o;
   });
-  rankMemo = { key, list };
+  rankMemo.clear();            // solo se guarda un periodo a la vez (cada uno puede ser una lista de miles)
+  rankMemo.set(months, { key, list });
   return list;
 };
 
@@ -170,7 +173,7 @@ function rebuildCollection() {
 const reduceMotion = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function go(tab) {
-  state.priceRun++; state.priceProgress.running = false;
+  state.priceRun++; state.priceProgress.running = false; state.vinylRun++; state.vinylProgress.running = false;
   const changed = tab !== state.tab;
   state.tab = tab; prefs.set('tab', tab);
   markTab();
@@ -186,6 +189,9 @@ function markTab() {
 document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => go(b.dataset.tab)));
 
 // opts.enter: al cambiar de pestaña la pantalla se funde y las primeras filas entran escalonadas
+// Repintados en segundo plano (llegan datos nuevos): se hacen directos, sin volver a enseñar el esqueleto
+let quietRender = false;
+const renderQuiet = () => { quietRender = true; try { render(); } finally { quietRender = false; } };
 const tabCost = {};      // lo que tardó la última vez en construirse cada pestaña (ms)
 let paintToken = 0;
 function render(opts = {}) {
@@ -200,7 +206,7 @@ function render(opts = {}) {
   };
   const token = ++paintToken;
   // Si la pestaña es pesada: primero sale al instante el esqueleto gris y el contenido se construye en el cuadro siguiente
-  if (tab !== 'coleccion' && tab !== 'comprar' && tab !== 'ajustes' && (tabCost[tab] === undefined || tabCost[tab] > 40)) {
+  if (!quietRender && tab !== 'coleccion' && tab !== 'comprar' && tab !== 'ajustes' && (tabCost[tab] === undefined || tabCost[tab] > 40)) {
     view.replaceChildren(skeletonList(8));
     requestAnimationFrame(() => setTimeout(() => { if (token === paintToken && state.tab === tab) paint(); }, 0));
     return;
@@ -568,44 +574,63 @@ function vBuy() {
   if (state.buyView === 'deseos') { root.append(wv.wishView(wishCtx)); return root; }
   if (state.buyView === 'comprados') { root.append(wv.boughtView(wishCtx)); return root; }
 
+  // Periodo propio de Sugeridos (no toca el de Estadísticas ni el del Ranking)
+  const BUY_PERIODS = [[6, '6 meses'], [12, '1 año'], [24, '2 años'], [0, 'Todo']];
+  root.append(h('div', { class: 'seg', role: 'group', 'aria-label': 'Escuchado en' }, BUY_PERIODS.map(([m, l]) =>
+    h('button', { 'aria-pressed': String(state.buyMonths === m), onclick: () => { state.buyMonths = m; prefs.set('buyMonths', String(m)); state.buyShown = 40; state.vinylRun++; state.vinylProgress.running = false; render(); } }, l))));
+
   // La parte pesada se pinta en el cuadro siguiente: primero sale el esqueleto gris con la forma de la lista (si la última vez tardó) y luego el contenido
   const build = () => {
     const root = h('div');
     const bought = W.boughtKeys(state.wish), wanted = W.wantedKeys(state.wish);
-    const all = C.minArtistPlays(rankingList(), 2).filter(r => !r.owned && !bought.has(r.key));     // todos los artistas con más de 1 reproducción
-    const missing = all.filter(r => !state.prices.has(r.key));
-    if (missing.length && !state.peeking) {
-      state.peeking = true;      // precios ya consultados antes (caché local): se pintan sin red
-      Promise.all(missing.map(r => discogs.peek(r).then(v => { if (v) state.prices.set(r.key, v); return !!v; })))
-        .then(found => { state.peeking = false; if (found.some(Boolean) && state.tab === 'comprar') render(); });
-    }
-    const withPrice = r => C.estimate({ discogs: state.prices.get(r.key) }, r.offers) != null;
-    const filters = {
-      todos: () => true, precio: withPrice,
-      stock: r => r.offers.some(o => o.available), preventa: r => r.offers.some(o => o.preorder)
-    };
-    const list = all.filter(filters[state.filter]);
-    if (state.filter === 'precio') fetchPrices(all);          // al elegir «Con precio» se consulta Discogs (de uno en uno, con caché de 12 h)
-
-    if (!all.length) {
+    const cands = C.minArtistPlays(rankingList(state.buyMonths), 2).filter(r => !r.owned && !bought.has(r.key));     // artistas con más de 1 reproducción
+    if (!cands.length) {
       root.append(h('div', { class: 'empty' }, 'Aquí saldrá lo que escuchas y no tienes en vinilo.'));
       return root;
     }
+    // Solo discos que existen en vinilo: los que ya tienen oferta de tienda y los que Discogs confirma (se comprueban poco a poco y se recuerdan 30 días)
+    const canCheck = discogs.hasToken();
+    const isVinyl = r => r.offers.length > 0 || state.vinyl.get(r.key) === true || (state.prices.get(r.key) && !state.prices.get(r.key).none);
+    const confirmed = canCheck ? cands.filter(isVinyl) : cands;
+    const unknown = canCheck ? cands.filter(r => !r.offers.length && !state.vinyl.has(r.key)) : [];
+    if (unknown.length && !state.peeking) {
+      state.peeking = true;      // lo ya comprobado antes (caché local) se lee sin red, solo de los primeros candidatos
+      Promise.all(unknown.slice(0, 300).map(r => discogs.vinylPeek(r).then(v => { if (v !== undefined) state.vinyl.set(r.key, v); return v !== undefined; })))
+        .then(found => { state.peeking = false; if (found.some(Boolean) && state.tab === 'comprar') renderQuiet(); else if (state.tab === 'comprar') verifyVinyl(cands); });
+    } else if (unknown.length) { /* ya se está leyendo la caché */ } else verifyVinyl(cands);
+
+    const missing = confirmed.slice(0, state.buyShown + 20).filter(r => !state.prices.has(r.key));
+    if (missing.length && !state.pricePeeking) {
+      state.pricePeeking = true;      // precios ya consultados antes (caché local): se pintan sin red
+      Promise.all(missing.map(r => discogs.peek(r).then(v => { if (v) state.prices.set(r.key, v); return !!v; })))
+        .then(found => { state.pricePeeking = false; if (found.some(Boolean) && state.tab === 'comprar') renderQuiet(); });
+    }
+    const withPrice = r => C.estimate({ discogs: state.prices.get(r.key) }, r.offers) != null;
+    const filters = { todos: () => true, precio: withPrice, stock: r => r.offers.some(o => o.available) };
+    if (!filters[state.filter]) state.filter = 'todos';
+    const list = confirmed.filter(filters[state.filter]);
+    if (state.filter === 'precio') fetchPrices(confirmed);          // al elegir «Con precio» se consulta Discogs (de uno en uno, con caché de 12 h)
+
     root.append(h('p', { class: 'muted' }, 'Lo que escuchas y no tienes en vinilo. Toca un disco para ver dónde comprarlo.'));
-    root.append(h('div', { class: 'chips' }, [['todos', 'Todos'], ['precio', 'Con precio'], ['stock', 'En stock'], ['preventa', 'Preventa']]
-      .map(([k, label]) => h('button', { class: 'chip', 'aria-pressed': String(state.filter === k), onclick: () => { state.priceRun++; state.priceProgress.running = false; state.filter = k; render(); } }, label))));
+    root.append(h('div', { class: 'chips' }, [['todos', 'Todos'], ['precio', 'Con precio'], ['stock', 'En stock']]
+      .map(([k, label]) => h('button', { class: 'chip', 'aria-pressed': String(state.filter === k), onclick: () => { state.priceRun++; state.priceProgress.running = false; state.filter = k; state.buyShown = 40; render(); } }, label))));
     if (state.filter === 'precio') {
       const pp = state.priceProgress;
       root.append(h('p', { class: 'muted' + (pp.error ? ' bad' : ''), role: 'status', id: 'price-progress' },
         pp.error ? pp.error : pp.running ? `Consultando precios en Discogs… ${pp.done}/${pp.total}` : discogs.hasToken() ? 'Tienda y Discogs (copia más barata).' : 'Solo precios de tienda. Para los de Discogs, añade tu token en Ajustes.'));
     }
-    root.append(list.length ? h('ul', { class: 'list' }, list.map((r, i) => albumRow({ ...r, wished: wanted.has(r.key) }, i))) : h('div', { class: 'empty' }, state.filter === 'precio' && state.priceProgress.running ? 'Buscando precios…' : 'Nada con este filtro.'));
-
+    const vp = state.vinylProgress;
+    const shown = list.slice(0, state.buyShown);
+    root.append(shown.length ? h('ul', { class: 'list' }, shown.map((r, i) => albumRow({ ...r, wished: wanted.has(r.key) }, i)))
+      : vp.running || (canCheck && unknown.length && !vp.error) ? skeletonList(4) : h('div', { class: 'empty' }, vp.error ? '' : 'Nada con este filtro.'));
+    if (list.length > shown.length) root.append(h('button', { class: 'btn sec wide', type: 'button', onclick: () => { state.buyShown += 40; render(); } }, `Ver más (${list.length - shown.length})`));
+    if (canCheck && (vp.running || vp.error)) root.append(h('p', { class: 'muted' + (vp.error ? ' bad' : ''), role: 'status' }, vp.error || `Comprobando en Discogs cuáles existen en vinilo… ${vp.done}`));
+    if (!canCheck) root.append(h('p', { class: 'muted' }, 'Añade tu token de Discogs en Ajustes para ver solo los discos que existen en vinilo.'));
     return root;
   };
   const slot = h('div');
   const run = () => { const t0 = performance.now(); const c = build(); state.buyCost = performance.now() - t0; return c; };
-  if (state.buyCost !== undefined && state.buyCost < 40) slot.append(run());
+  if (quietRender || (state.buyCost !== undefined && state.buyCost < 40)) slot.append(run());
   else {
     slot.append(skeletonList());
     const mine = ++buyToken;
@@ -613,6 +638,32 @@ function vBuy() {
   }
   root.append(slot);
   return root;
+}
+
+// Comprueba en Discogs, de uno en uno y en orden, qué discos existen en vinilo hasta tener los que se muestran (y unos pocos más). Se recuerda 30 días.
+let vinylRepaintAt = 0;
+async function verifyVinyl(cands) {
+  const vp = state.vinylProgress;
+  if (vp.running || !discogs.hasToken()) return;
+  const need = state.buyShown + 10, me = ++state.vinylRun;
+  const confirmedCount = () => cands.filter(r => r.offers.length || state.vinyl.get(r.key) === true).length;
+  if (confirmedCount() >= need) return;
+  vp.running = true; vp.done = 0; vp.error = ''; let did = false;
+  const repaint = (force) => {
+    if (state.tab !== 'comprar' || state.buyView !== 'sugeridos' || me !== state.vinylRun) return;
+    if (!force && Date.now() - vinylRepaintAt < 1500) return;
+    vinylRepaintAt = Date.now(); const top = view.scrollTop; renderQuiet(); view.scrollTop = top;
+  };
+  for (const r of cands) {
+    if (me !== state.vinylRun) return;                             // se cambió de pestaña, periodo o filtro
+    if (confirmedCount() >= need || vp.done >= 150) break;
+    if (r.offers.length || state.vinyl.has(r.key) || state.vinylTried.has(r.key)) continue;
+    state.vinylTried.add(r.key); did = true;
+    try { const v = await discogs.hasVinyl(r); state.vinyl.set(r.key, v); if (v) repaint(false); }
+    catch (e) { vp.error = e.message; break; }
+    vp.done++;
+  }
+  if (me === state.vinylRun) { vp.running = false; if (did) setTimeout(() => repaint(true), 0); }
 }
 
 // Precios de Discogs para «Con precio»: los primeros 60 sugeridos, de uno en uno (límite de Discogs) y guardados 12 h.
@@ -624,7 +675,7 @@ async function fetchPrices(all) {
   if (!todo.length) return;
   pp.running = true; pp.done = 0; pp.total = todo.length; pp.error = '';
   const me = ++state.priceRun;
-  const repaint = () => { if (state.tab === 'comprar' && state.buyView === 'sugeridos' && state.filter === 'precio') { const top = view.scrollTop; render(); view.scrollTop = top; } };
+  const repaint = () => { if (state.tab === 'comprar' && state.buyView === 'sugeridos' && state.filter === 'precio') { const top = view.scrollTop; renderQuiet(); view.scrollTop = top; } };
   setTimeout(repaint, 0);
   for (const r of todo) {
     if (me !== state.priceRun) break;                         // se cambió de pestaña o de filtro

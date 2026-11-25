@@ -72,3 +72,18 @@ export async function searchReleases(q) {
 export async function searchBarcode(code) {
   return (await call('/database/search', { type: 'release', barcode: code, per_page: 20 })).results || [];
 }
+
+// ¿Hay edición en vinilo de este álbum? Una sola consulta a Discogs y se recuerda 30 días. -> true | false | undefined (sin caché: peek)
+const VINYL_TTL = 30 * 86400000;
+export async function vinylPeek(album) {
+  const c = await store.get('vinyl:' + album.key);
+  return c && Date.now() - c.at < VINYL_TTL ? c.v : undefined;
+}
+export async function hasVinyl(album) {
+  const known = await vinylPeek(album);
+  if (known !== undefined) return known;
+  const res = await call('/database/search', { type: 'release', format: 'Vinyl', artist: album.artist, release_title: cleanAlbum(album.name), per_page: 15 });
+  const v = !!pickRelease(res.results, album.artist, album.name);
+  await store.set('vinyl:' + album.key, { at: Date.now(), v });
+  return v;
+}

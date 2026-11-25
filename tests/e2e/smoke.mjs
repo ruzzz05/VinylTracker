@@ -234,6 +234,15 @@ assert.ok((await page.$$('.list .row')).length >= 1);
 assert.match(await page.textContent('#view'), /19,00/);
 await page.screenshot({ path: path.join(SHOTS, '3a-con-precio.png') });
 await page.click('.chip:has-text("Todos")');
+// Sugeridos: sin «Preventa», con su propio periodo (no toca el de Estadísticas) y solo discos con vinilo
+assert.equal((await page.$$('.chip:has-text("Preventa")')).length, 0, 'ya no hay filtro de preventa');
+const periodoAntes = await page.evaluate(() => localStorage.getItem('vt.months'));
+await page.click('.seg[aria-label="Escuchado en"] button:has-text("Todo")');
+await page.waitForSelector('.list .row:not(.skel)');
+assert.equal(await page.evaluate(() => localStorage.getItem('vt.buyMonths')), '0');
+assert.equal(await page.evaluate(() => localStorage.getItem('vt.months')), periodoAntes, 'el periodo de Comprar no cambia el de la app');
+await page.waitForFunction(() => !/Comprobando en Discogs/.test(document.querySelector('#view').textContent), null, { timeout: 60000 });
+await page.click('.seg[aria-label="Escuchado en"] button:has-text("1 año")');
 
 // ---------- Deseos y comprados ----------
 await page.click('[data-tab=comprar]');
