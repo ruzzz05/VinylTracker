@@ -3,6 +3,7 @@ import { h, safeUrl } from './dom.js';
 import * as K from './concerts.js';
 import * as S from './stats.js';
 import { prefs } from './storage.js';
+import * as store from './storage.js';
 
 const PERIODS = [[6, '6 meses'], [12, '1 año'], [0, 'Todo']];
 const LIMIT = 50;
@@ -18,7 +19,35 @@ async function load() {
   } catch (e) { loaded = null; }
   return loaded;
 }
-export const resetConcerts = () => { loaded = undefined; };
+export const resetConcerts = () => { loaded = undefined; bit = undefined; };
+
+// Sin datos de Ticketmaster: se consulta Bandsintown artista a artista (en el móvil, con caché de 12 h)
+const BIT_TTL = 12 * 3600000;
+let bit;
+async function loadBandsintown(names, onProgress) {
+  if (bit && bit.key === names.join('|')) return bit.val;
+  const appId = prefs.get('bit.appid', 'vinyltracker');
+  let done = 0, fails = 0;
+  const one = async name => {
+    const key = 'bit:' + name.toLowerCase();
+    try {
+      const c = await store.get(key);
+      if (c && Date.now() - c.at < BIT_TTL) return c.events;
+      const r = await fetch(`https://rest.bandsintown.com/artists/${encodeURIComponent(name)}/events?app_id=${encodeURIComponent(appId)}&date=upcoming`);
+      if (!r.ok) throw new Error(String(r.status));
+      const events = K.fromBandsintown(name, await r.json());
+      await store.set(key, { at: Date.now(), events });
+      return events;
+    } catch (e) { fails++; return []; }
+    finally { onProgress(++done, names.length); }
+  };
+  const results = [], queue = [...names.entries()];
+  await Promise.all(Array.from({ length: 4 }, async () => { for (let it; (it = queue.shift());) results[it[0]] = await one(it[1]); }));
+  const data = K.bandsintownData(results);
+  const val = fails === names.length ? null : { data, idx: K.indexConcerts(data) };
+  bit = { key: names.join('|'), val };
+  return val;
+}
 
 const dateBlock = d => {
   const t = new Date(d + 'T12:00:00');
@@ -58,11 +87,15 @@ export function concertsView({ state, onSettings }) {
   const info = h('p', { class: 'muted', role: 'status' }, 'Cargando conciertos…'), list = h('div'), none = h('details', { class: 'dt' });
   root.append(info, list, none);
 
-  load().then(L => {
+  load().then(async L => {
+    if (!L || !(L.data.events || []).length) {
+      info.textContent = 'Buscando conciertos…';
+      L = await loadBandsintown(names, (n, t) => { if (info.isConnected) info.textContent = `Buscando conciertos… ${n}/${t}`; });
+    }
     if (!L) {
       info.textContent = '';
       list.replaceChildren(h('div', { class: 'card' }, h('h3', null, 'Todavía no hay datos de conciertos'),
-        h('p', { class: 'muted' }, 'Falta la clave de Ticketmaster en el repositorio (secreto TICKETMASTER_KEY).'),
+        h('p', { class: 'muted' }, 'No he podido consultar Bandsintown y falta la clave de Ticketmaster (secreto TICKETMASTER_KEY del repositorio).'),
         h('button', { class: 'btn sec', onclick: () => { resetConcerts(); rerender(); } }, 'Volver a mirar')));
       return;
     }
@@ -80,14 +113,14 @@ export function concertsView({ state, onSettings }) {
       info.textContent = evs.length ? `${evs.length} concierto${evs.length === 1 ? '' : 's'}${where}.` : '';
       list.replaceChildren(...K.groupByMonth(evs).map(([k, items]) => h('section', null, h('h2', { class: 'month' }, K.monthLabel(k)), h('ul', { class: 'list' }, items.map(eventRow)))));
       if (!evs.length) list.append(h('div', { class: 'empty' }, h('p', null, `Ninguno de tus artistas tiene conciertos anunciados${where}.`),
-        h('p', { class: 'muted' }, cc ? 'Prueba con «Todos los países».' : 'Ticketmaster solo cubre sus propios eventos.')));
+        h('p', { class: 'muted' }, cc ? 'Prueba con «Todos los países».' : 'La fuente solo cubre sus propios eventos.')));
       const without = per.filter(p => !K.filterCountry(p.ev, cc).some(e => e.date >= today)).map(p => p.n);
       none.replaceChildren(...(without.length ? [h('summary', null, `Sin fechas anunciadas (${without.length})`), h('p', { class: 'muted' }, without.join(', '))] : []));
     };
     sel.addEventListener('change', () => { prefs.set('conc.country', sel.value); paint(); });
     paint();
     const gen = L.data.generated ? new Date(L.data.generated).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) : '';
-    none.after(h('p', { class: 'muted' }, `Ticketmaster${gen ? ', ' + gen : ''}.`));
+    none.after(h('p', { class: 'muted' }, `${L.data.source || 'Ticketmaster'}${gen ? ', ' + gen : ''}.`));
   });
   return root;
 }

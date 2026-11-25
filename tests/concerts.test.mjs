@@ -44,3 +44,15 @@ test('artistNames: del historial o, sin él, de los álbumes de la API', () => {
   const S = buildStats([...row('A', 3), ...row('B', 8)]);
   assert.deepEqual(artistNames({ stats: S, apiAlbums: {}, months: 0, limit: 5, topArtists }), ['B', 'A']);
 });
+
+test('Bandsintown: se convierte al formato compacto y se une sin repetidos', async () => {
+  const K = await import('../js/concerts.js');
+  const ev = K.fromBandsintown('Muse', [
+    { id: '1', datetime: '2027-05-10T21:00:00', title: '', venue: { name: 'WiZink', city: 'Madrid', country: 'Spain' }, offers: [{ url: 'https://t/1', status: 'available' }], lineup: ['Muse', 'Otro'] },
+    { id: '2', datetime: 'raro' }]);
+  assert.equal(ev.length, 1);
+  assert.deepEqual(ev[0].slice(0, 9), ['bit1', 'Muse', '2027-05-10', '21:00', 'ok', 'WiZink', 'Madrid', 'ES', 'https://t/1']);
+  const d = K.bandsintownData([ev, ev]);
+  assert.equal(d.events.length, 1); assert.deepEqual(d.countries, ['ES']);
+  assert.equal(K.eventsFor(K.indexConcerts(d), 'Muse').length, 1);
+});

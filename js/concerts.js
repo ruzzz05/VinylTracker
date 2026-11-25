@@ -63,3 +63,33 @@ export function artistNames({ stats, apiAlbums, months, limit, topArtists, now =
   for (const a of Object.values(apiAlbums || {})) by[a.artist] = (by[a.artist] || 0) + (a.points || 0);
   return Object.entries(by).filter(([, p]) => p > 0).sort((x, y) => y[1] - x[1]).slice(0, limit).map(([n]) => n);
 }
+
+// ---------- Bandsintown (alternativa sin clave de Ticketmaster; se consulta desde el móvil, artista a artista) ----------
+const CC = { spain: 'ES', españa: 'ES', portugal: 'PT', france: 'FR', francia: 'FR', germany: 'DE', alemania: 'DE', 'united kingdom': 'GB', uk: 'GB', 'reino unido': 'GB',
+  italy: 'IT', italia: 'IT', netherlands: 'NL', 'the netherlands': 'NL', 'united states': 'US', usa: 'US', belgium: 'BE', ireland: 'IE', switzerland: 'CH' };
+
+// Respuesta de Bandsintown para un artista -> eventos en el mismo formato compacto que el fichero de Ticketmaster
+export function fromBandsintown(artist, list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const e of list) {
+    const dt = String((e && e.datetime) || '');
+    if (!/^\d{4}-\d{2}-\d{2}/.test(dt)) continue;
+    const v = e.venue || {};
+    const country = String(v.country || '');
+    const offer = (e.offers || []).find(o => o && o.url);
+    const sold = (e.offers || []).some(o => /sold/i.test(o.status || ''));
+    out.push([ 'bit' + (e.id || dt + artist), e.title || artist, dt.slice(0, 10), dt.slice(11, 16) === '00:00' ? '' : dt.slice(11, 16), sold ? 'offsale' : 'ok',
+      v.name || '', v.city || '', CC[country.toLowerCase()] || (/^[A-Z]{2}$/.test(country) ? country : ''), (offer && offer.url) || e.url || '',
+      [artist, ...(e.lineup || []).filter(n => n && n !== artist)].slice(0, 8) ]);
+  }
+  return out;
+}
+
+// Une las listas de varios artistas en el formato del fichero de Ticketmaster ({ countries, events, generated })
+export function bandsintownData(perArtist, now = new Date()) {
+  const seen = new Set(), events = [];
+  for (const e of perArtist.flat()) if (!seen.has(e[0])) { seen.add(e[0]); events.push(e); }
+  events.sort((a, b) => (a[2] + a[3]).localeCompare(b[2] + b[3]));
+  return { generated: now.toISOString(), source: 'Bandsintown', countries: [...new Set(events.map(e => e[7]).filter(Boolean))].sort(), events };
+}
