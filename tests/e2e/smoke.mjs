@@ -234,6 +234,25 @@ assert.ok((await page.$$('.list .row')).length >= 1);
 assert.match(await page.textContent('#view'), /19,00/);
 await page.screenshot({ path: path.join(SHOTS, '3a-con-precio.png') });
 await page.click('.chip:has-text("Todos")');
+// Deslizar a la izquierda oculta un disco de Sugeridos; el desplegable del final lo recupera
+{
+  await page.waitForSelector('.list .row:not(.skel)');
+  const antes = await page.$$eval('li.swipe .row .t b', bs => bs.map(b => b.textContent));
+  const box = await (await page.$('.list > li .row')).boundingBox();
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width - 30, y); await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 90, y, { steps: 4 }); await page.mouse.move(box.x + 40, y, { steps: 6 }); await page.mouse.up();
+  await page.waitForFunction(n => document.querySelectorAll('li.swipe .row .t b').length < n, antes.length);
+  const despues = await page.$$eval('li.swipe .row .t b', bs => bs.map(b => b.textContent));
+  assert.ok(!despues.includes(antes[0]) || antes.filter(x => x === antes[0]).length > 1, 'el disco deslizado desaparece');
+  assert.equal((await page.$$('.sheet .panel')).length, 0, 'deslizar no abre la ficha');
+  await page.waitForSelector('details.hid');
+  assert.match(await page.textContent('details.hid summary'), /Ocultos \(1\)/);
+  await page.click('details.hid summary');
+  await page.click('details.hid >> text=Recuperar');
+  await page.waitForSelector('details.hid', { state: 'detached' });
+  assert.ok((await page.$$eval('li.swipe .row .t b', bs => bs.map(b => b.textContent))).includes(antes[0]), 'Recuperar devuelve el disco a la lista');
+}
 // Sugeridos: sin «Preventa», con su propio periodo (no toca el de Estadísticas) y solo discos con vinilo
 assert.equal((await page.$$('.chip:has-text("Preventa")')).length, 0, 'ya no hay filtro de preventa');
 const periodoAntes = await page.evaluate(() => localStorage.getItem('vt.months'));

@@ -23,7 +23,7 @@ import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 import * as T from './tint.js';
 
-const VERSION = '1.16.0';
+const VERSION = '1.17.0';
 // Oscuro por defecto (es el diseño Tinta); «auto» sigue al sistema
 const applyTheme = v => { if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v === 'light' ? 'light' : 'dark'; };
 applyTheme(prefs.get('theme'));
@@ -296,6 +296,39 @@ function priceChip(r) {
   const o = C.bestOffer(r.offers);
   const live = o && (o.available || o.preorder);
   return h('span', { class: 'chip ' + (live ? 'ok' : '') }, C.money(est));
+}
+
+// Discos que quitas de Sugeridos deslizando hacia la izquierda; se recuperan desde el desplegable del final
+const readHidden = () => { try { const v = JSON.parse(prefs.get('buy.hidden', '{}')); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; } catch (e) { return {}; } };
+const writeHidden = o => prefs.set('buy.hidden', JSON.stringify(o));
+
+// Envuelve una fila para poder quitarla deslizando a la izquierda (también con ratón). Un toque normal sigue abriendo la ficha.
+function swipeToHide(li, onHide) {
+  const row = li.firstElementChild;
+  li.classList.add('swipe');
+  li.prepend(h('div', { class: 'swipe-bg', 'aria-hidden': 'true' }, 'Ocultar'));
+  let x0 = 0, y0 = 0, dx = 0, drag = false, id = null, moved = false;
+  const reset = () => { row.style.transition = 'transform .2s ease'; row.style.transform = ''; };
+  row.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse' && e.button !== 0) return; x0 = e.clientX; y0 = e.clientY; dx = 0; drag = true; moved = false; id = e.pointerId; row.style.transition = 'none'; });
+  row.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== id) return;
+    const mx = e.clientX - x0, my = e.clientY - y0;
+    if (!moved) { if (Math.abs(my) > 12 && Math.abs(my) > Math.abs(mx)) { drag = false; return; } if (mx > -10 || Math.abs(mx) < Math.abs(my)) return; moved = true; try { row.setPointerCapture(id); } catch (err) { /* ya capturado */ } }
+    dx = Math.min(0, mx); row.style.transform = `translateX(${dx}px)`;
+    li.classList.toggle('armed', dx < -90);
+  });
+  const end = e => {
+    if (!drag || (e && e.pointerId !== id)) return;
+    drag = false;
+    if (moved && dx < -90) {
+      row.style.transition = 'transform .18s ease, opacity .18s ease'; row.style.transform = 'translateX(-110%)'; row.style.opacity = '0';
+      setTimeout(onHide, reduceMotion() ? 0 : 180);
+    } else reset();
+    li.classList.remove('armed');
+  };
+  row.addEventListener('pointerup', end); row.addEventListener('pointercancel', end);
+  row.addEventListener('click', e => { if (moved) { e.stopImmediatePropagation(); e.preventDefault(); moved = false; } }, true);      // el deslizamiento no abre la ficha
+  return li;
 }
 
 function albumRow(r, i) {
@@ -583,9 +616,17 @@ function vBuy() {
   const build = () => {
     const root = h('div');
     const bought = W.boughtKeys(state.wish), wanted = W.wantedKeys(state.wish);
-    const cands = C.minArtistPlays(rankingList(state.buyMonths), 2).filter(r => !r.owned && !bought.has(r.key));     // artistas con más de 1 reproducción
+    const hidden = readHidden();
+    const cands = C.minArtistPlays(rankingList(state.buyMonths), 2).filter(r => !r.owned && !bought.has(r.key) && !hidden[r.key]);     // artistas con más de 1 reproducción
+    const hiddenBox = () => {
+      const keys = Object.keys(hidden);
+      return keys.length ? h('details', { class: 'dt hid' }, h('summary', null, `Ocultos (${keys.length})`),
+        h('ul', { class: 'list' }, keys.map(k => h('li', null, h('div', { class: 'row static hrow' }, h('div', { class: 't' }, h('b', null, hidden[k][1]), h('span', null, hidden[k][0])),
+          h('button', { class: 'btn sec sm', type: 'button', onclick: () => { const o = readHidden(); delete o[k]; writeHidden(o); renderQuiet(); } }, 'Recuperar')))))) : null;
+    };
     if (!cands.length) {
       root.append(h('div', { class: 'empty' }, 'Aquí saldrá lo que escuchas y no tienes en vinilo.'));
+      const hb = hiddenBox(); if (hb) root.append(hb);
       return root;
     }
     // Solo discos que existen en vinilo: los que ya tienen oferta de tienda y los que Discogs confirma (se comprueban poco a poco y se recuerdan 30 días)
@@ -611,7 +652,6 @@ function vBuy() {
     const list = confirmed.filter(filters[state.filter]);
     if (state.filter === 'precio') fetchPrices(confirmed);          // al elegir «Con precio» se consulta Discogs (de uno en uno, con caché de 12 h)
 
-    root.append(h('p', { class: 'muted' }, 'Lo que escuchas y no tienes en vinilo. Toca un disco para ver dónde comprarlo.'));
     root.append(h('div', { class: 'chips' }, [['todos', 'Todos'], ['precio', 'Con precio'], ['stock', 'En stock']]
       .map(([k, label]) => h('button', { class: 'chip', 'aria-pressed': String(state.filter === k), onclick: () => { state.priceRun++; state.priceProgress.running = false; state.filter = k; state.buyShown = 40; render(); } }, label))));
     if (state.filter === 'precio') {
@@ -621,11 +661,12 @@ function vBuy() {
     }
     const vp = state.vinylProgress;
     const shown = list.slice(0, state.buyShown);
-    root.append(shown.length ? h('ul', { class: 'list' }, shown.map((r, i) => albumRow({ ...r, wished: wanted.has(r.key) }, i)))
+    root.append(shown.length ? h('ul', { class: 'list' }, shown.map((r, i) => swipeToHide(albumRow({ ...r, wished: wanted.has(r.key) }, i), () => { const o = readHidden(); o[r.key] = [r.artist, r.name]; writeHidden(o); renderQuiet(); })))
       : vp.running || (canCheck && unknown.length && !vp.error) ? skeletonList(4) : h('div', { class: 'empty' }, vp.error ? '' : 'Nada con este filtro.'));
     if (list.length > shown.length) root.append(h('button', { class: 'btn sec wide', type: 'button', onclick: () => { state.buyShown += 40; render(); } }, `Ver más (${list.length - shown.length})`));
     if (canCheck && (vp.running || vp.error)) root.append(h('p', { class: 'muted' + (vp.error ? ' bad' : ''), role: 'status' }, vp.error || `Comprobando en Discogs cuáles existen en vinilo… ${vp.done}`));
     if (!canCheck) root.append(h('p', { class: 'muted' }, 'Añade tu token de Discogs en Ajustes para ver solo los discos que existen en vinilo.'));
+    const hb = hiddenBox(); if (hb) root.append(hb);
     return root;
   };
   const slot = h('div');

@@ -440,3 +440,15 @@ img.cover.fade { animation: fade-in .35s ease both; }
 
 /* El contador sobre «Comprar»: azul fijo, no depende del color de ambiente */
 .tabs .badge, .dock .badge { background: #3b82f6; color: #fff; box-shadow: 0 0 0 2px var(--solid); }
+
+/* Quitar un disco deslizando a la izquierda */
+.list > li.swipe { position: relative; border-radius: 14px; overflow: hidden; }
+.swipe > .row { position: relative; touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.swipe-bg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-end; padding-right: 22px; background: var(--solid2); color: var(--muted); font-weight: 600; font-size: .85rem; border-radius: 14px; }
+.swipe.armed .swipe-bg { background: color-mix(in srgb, var(--bad) 30%, var(--solid2)); color: var(--text); }
+details.hid { margin: 18px 2px 8px; font-size: .9rem; }
+details.hid summary { padding: 10px 0; }
+details.hid .list { margin-top: 6px; }
+.hrow { grid-template-columns: 1fr auto; cursor: default; }
+/* Separación pareja entre los bloques de Comprar */
+.seg + .seg, .seg + .chips, .chips + .list, .seg + .list { margin-top: 10px; }
