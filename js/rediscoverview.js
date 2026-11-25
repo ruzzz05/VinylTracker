@@ -124,13 +124,18 @@ async function createPlaylistFlow(ctx, S, list, kind, plist) {
   ctx.showPanel(h('h2', null, 'Crear playlist'), body);
   try {
     const uris = [];
+    let lastErr = null;
     for (let i = 0; i < tracks.length; i++) {
       status.textContent = `Buscando canciones en Spotify… ${i + 1}/${tracks.length}`;
       const t = tracks[i];
-      const u = t.uri || await spotify.findTrackUri(t.artist, t.name).catch(() => null);
+      let u = t.uri || null;
+      if (!u) {
+        try { u = await spotify.findTrackUri(t.artist, t.name); }
+        catch (e) { lastErr = e; if (/rechaz/.test(e.message)) break; }       // permiso caducado: no tiene sentido seguir
+      }
       if (u && !uris.includes(u)) uris.push(u);
     }
-    if (!uris.length) throw new Error('No encontré ninguna de las canciones en Spotify.');
+    if (!uris.length) throw new Error(lastErr ? 'Spotify no deja buscar: ' + lastErr.message : 'No encontré ninguna de las canciones en Spotify.');
     status.textContent = 'Creando la playlist…';
     const name = `Redescubre · ${new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}`;
     const pl = await spotify.createPlaylist(name, 'Lo que escuchabas mucho y hace tiempo que no suena. Creada con VinylTracker.');

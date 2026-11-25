@@ -94,7 +94,12 @@ async function token() {
 }
 
 async function get(path, params) {
-  const r = await fetch(`${API}${path}?${new URLSearchParams(params)}`, { headers: { Authorization: 'Bearer ' + await token() } });
+  let r = await fetch(`${API}${path}?${new URLSearchParams(params)}`, { headers: { Authorization: 'Bearer ' + await token() } });
+  if (r.status === 429) {          // demasiadas peticiones seguidas: se espera lo que pide Spotify (máx. 8 s) y se reintenta una vez
+    const wait = Math.min(8, Number(r.headers.get('Retry-After')) || 2);
+    await new Promise(res => setTimeout(res, wait * 1000));
+    r = await fetch(`${API}${path}?${new URLSearchParams(params)}`, { headers: { Authorization: 'Bearer ' + await token() } });
+  }
   if (r.status === 401 || r.status === 403) throw new Error('Spotify rechazó la petición (' + r.status + '). Vuelve a conectar la cuenta.');
   if (!r.ok) throw new Error('Spotify respondió ' + r.status);
   return r.json();
@@ -223,9 +228,12 @@ export async function addToPlaylist(id, uris) {
 }
 
 // URI de una canción buscándola por nombre y artista (null si no aparece)
+// Primero la búsqueda estricta y, si no da nada, una libre (títulos con símbolos o comillas). Solo se acepta una canción del mismo artista.
 export async function findTrackUri(artist, name) {
-  const items = await searchTrack(artist, name);
   const n = String(name).toLowerCase(), a = String(artist).toLowerCase();
-  const hit = items.find(t => String(t.name).toLowerCase() === n && (t.artists || []).some(x => String(x.name).toLowerCase() === a)) || items[0];
+  const byArtist = t => (t.artists || []).some(x => String(x.name).toLowerCase() === a);
+  const pick = items => items.find(t => String(t.name).toLowerCase() === n && byArtist(t)) || items.find(byArtist) || null;
+  let hit = pick(await searchTrack(artist, name).catch(e => { if (/rechaz|429/.test(e.message)) throw e; return []; }));
+  if (!hit) hit = pick(await searchLoose(artist, name, 'track'));
   return hit ? hit.uri : null;
 }
