@@ -258,3 +258,14 @@ test('lostAlbums / nextBackup: detectan discos que desaparecen y los conservan h
   r = C.nextBackup(r.backup, [a, b, c]);                                         // restaurado: ya no falta nada
   assert.deepEqual(r.lost, []); assert.deepEqual(r.backup.map(x => x.id), [a.id, b.id, c.id]);
 });
+
+test('matchStores con índice (lista grande) da lo mismo que recorrer todo', () => {
+  const data = { shops: [{ store: 'T', items: [] }] };
+  const idx = [];
+  for (let i = 0; i < 300; i++) idx.push({ store: 'T', title: `Grupo${i} Disco${i % 40} LP`, price: i, available: i % 2 === 0, toks: new Set(['grupo' + i, 'disco' + (i % 40), 'lp']) });
+  idx.push({ store: 'T', title: 'Nirvana Nevermind LP', price: 20, available: true, toks: new Set(['nirvana', 'nevermind', 'lp']) });
+  const slow = (a) => C.matchStores(a, idx, { minAlbum: 0.98 });          // < 0,99: camino sin índice
+  for (const a of [{ artist: 'Nirvana', name: 'Nevermind' }, { artist: 'Grupo7', name: 'Disco7' }, { artist: 'X', name: 'Nada' }])
+    assert.deepEqual(C.matchStores(a, idx).map(o => o.title), slow(a).map(o => o.title));
+  assert.equal(C.matchStores({ artist: 'Nirvana', name: 'Nevermind' }, idx).length, 1);
+});

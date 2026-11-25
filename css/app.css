@@ -323,7 +323,8 @@ details.dt th, details.dt td { text-align: left; padding: 3px 4px; border-bottom
 
 /* Botón «×» de las fichas: fijo arriba a la derecha dentro del panel */
 .sheet .panel { position: relative; }
-.sheet-x { position: sticky; top: 0; float: right; z-index: 2; width: 40px; height: 40px; margin: -6px -6px 0 8px; border: 0; border-radius: 50%; background: var(--surface2); color: var(--text); font: 400 26px/1 inherit; font-family: inherit; display: grid; place-items: center; cursor: pointer; padding: 0 0 3px; }
+.sheet-x { position: sticky; top: 0; float: right; z-index: 3; width: 46px; height: 46px; margin: -8px -8px 0 8px; border: 0; border-radius: 50%; background: var(--surface2); color: var(--text); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.sheet-x::after { content: ''; position: absolute; inset: -6px; }
 
 /* Olvidados */
 .frow .btn.sm { padding: 6px 12px; }
@@ -420,3 +421,19 @@ img.cover.fade { animation: fade-in .35s ease both; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
   .eq i { animation: none; transform: scaleY(.6); }
 }
+
+/* Las fichas dejan siempre un margen por encima (bajo la barra de estado) que también cierra al tocarlo */
+.sheet .panel { max-height: calc(100% - env(safe-area-inset-top, 0px) - 56px); }
+.sheet .panel .sheet-x { background: var(--solid2); border: 1px solid var(--glass-line); }
+
+/* Esqueleto de carga */
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.sk { display: block; border-radius: 8px; background: linear-gradient(90deg, var(--surface) 30%, var(--glass-strong) 50%, var(--surface) 70%); background-size: 300% 100%; animation: shimmer 1.3s linear infinite; }
+.skel { grid-template-columns: 26px 56px 1fr 64px; align-items: center; }
+.skel .sk.n { width: 14px; height: 14px; justify-self: center; }
+.skel .sk.cv { width: 56px; height: 56px; border-radius: 10px; }
+.skel .sk.l1 { height: 15px; width: 70%; margin: 3px 0 9px; }
+.skel .sk.l2 { height: 12px; width: 45%; }
+.skel .sk.m { height: 30px; width: 58px; justify-self: end; }
+.skel-list > li:nth-child(2) .sk.l1 { width: 55%; } .skel-list > li:nth-child(3) .sk.l1 { width: 80%; } .skel-list > li:nth-child(4) .sk.l1 { width: 62%; }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } }

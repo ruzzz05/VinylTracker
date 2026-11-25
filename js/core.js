@@ -185,9 +185,28 @@ export function indexStores(data) {
   return out;
 }
 
+// Índice por palabra (se crea una vez por lista de tiendas): para un álbum solo se miran los productos que contienen su palabra más rara
+const tokIdx = new WeakMap();
+function tokenIndex(index) {
+  let m = tokIdx.get(index);
+  if (!m) {
+    m = new Map();
+    index.forEach((p, i) => { for (const t of p.toks) { let l = m.get(t); if (!l) m.set(t, l = []); l.push(i); } });
+    tokIdx.set(index, m);
+  }
+  return m;
+}
+
 export function matchStores(album, index, { minAlbum = 0.99, minArtist = 0.5 } = {}) {
   const a = tokens(album.artist), b = tokens(cleanAlbum(album.name));
-  return index
+  let pool = index;
+  if (minAlbum >= 0.99 && b.length && index.length > 50) {          // con 0,99 hacen falta TODAS las palabras del álbum: basta mirar los productos que tienen la más rara
+    const m = tokenIndex(index);
+    let best = null;
+    for (const t of b) { const l = m.get(t); if (!l) return []; if (!best || l.length < best.length) best = l; }
+    pool = best.map(i => index[i]);
+  }
+  return pool
     .filter(p => overlap(b, p.toks) >= minAlbum && overlap(a, p.toks) >= minArtist)
     .map(({ toks, ...rest }) => rest)
     .sort((x, y) => (y.available || y.preorder) - (x.available || x.preorder) || x.price - y.price);

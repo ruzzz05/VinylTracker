@@ -23,7 +23,7 @@ import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 import * as T from './tint.js';
 
-const VERSION = '1.14.0';
+const VERSION = '1.14.1';
 // Oscuro por defecto (es el diseño Tinta); «auto» sigue al sistema
 const applyTheme = v => { if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v === 'light' ? 'light' : 'dark'; };
 applyTheme(prefs.get('theme'));
@@ -98,8 +98,27 @@ function recompute() {
   state.effHistory = C.mergeHistory(state.history, state.liveHistory);
 }
 
-const rankingList = () => C.buildRanking({ history: state.effHistory, api: state.apiAlbums, months: state.months })
-  .map(r => ({ ...r, owned: C.isOwned(r, state.owned), offers: C.matchStores(r, state.storeIndex) }));
+// Ranking: se calcula una sola vez mientras no cambien los datos, y las ofertas de tienda solo cuando alguien las pide
+let rankMemo = { key: null, list: [] };
+const offersCache = new WeakMap();
+const offersFor = r => {
+  let m = offersCache.get(state.storeIndex);
+  if (!m) offersCache.set(state.storeIndex, m = new Map());
+  let o = m.get(r.key);
+  if (!o) m.set(r.key, o = C.matchStores(r, state.storeIndex));
+  return o;
+};
+const rankingList = () => {
+  const key = [state.effHistory, state.apiAlbums, state.months, state.owned, state.storeIndex];
+  if (rankMemo.key && key.every((v, i) => v === rankMemo.key[i])) return rankMemo.list;
+  const list = C.buildRanking({ history: state.effHistory, api: state.apiAlbums, months: state.months }).map(r => {
+    const o = { ...r, owned: C.isOwned(r, state.owned) };
+    Object.defineProperty(o, 'offers', { enumerable: true, configurable: true, get: () => offersFor(r) });
+    return o;
+  });
+  rankMemo = { key, list };
+  return list;
+};
 
 async function loadAll() {
   imgcache.preload().catch(() => {});
@@ -468,7 +487,7 @@ function showBadExtras() {
 }
 
 // «×» fijo arriba a la derecha: la ficha siempre se puede cerrar sin tener que bajar hasta «Cerrar»
-const closeX = () => h('button', { class: 'sheet-x', type: 'button', 'aria-label': 'Cerrar', title: 'Cerrar', onclick: () => closeSheet() }, '×');
+const closeX = () => h('button', { class: 'sheet-x', type: 'button', 'aria-label': 'Cerrar', title: 'Cerrar', onclick: () => closeSheet() }, icon('<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sheet').hidden) closeSheet(); });
 
 function showPanel(...kids) {
@@ -523,6 +542,11 @@ const syncExtras = syncAll;
 // ---------- Comprar (sugeridos · deseos · comprados) ----------
 const BUY_VIEWS = [['sugeridos', 'Sugeridos'], ['deseos', 'Deseos'], ['comprados', 'Comprados']];
 
+let buyToken = 0;
+// Esqueleto: filas grises que parpadean con la forma de lo que va a aparecer
+const skeletonList = (n = 7) => h('ul', { class: 'list skel-list', 'aria-busy': 'true', 'aria-label': 'Cargando' }, Array.from({ length: n }, () => h('li', null,
+  h('div', { class: 'row static skel' }, h('i', { class: 'sk n' }), h('i', { class: 'sk cv' }), h('div', { class: 't' }, h('i', { class: 'sk l1' }), h('i', { class: 'sk l2' })), h('i', { class: 'sk m' })))));
+
 function vBuy() {
   const root = h('div');
   const nWish = state.wish.filter(w => w.status === 'wanted').length, nBought = state.wish.filter(w => w.status === 'bought').length;
@@ -532,35 +556,50 @@ function vBuy() {
   if (state.buyView === 'deseos') { root.append(wv.wishView(wishCtx)); return root; }
   if (state.buyView === 'comprados') { root.append(wv.boughtView(wishCtx)); return root; }
 
-  const bought = W.boughtKeys(state.wish), wanted = W.wantedKeys(state.wish);
-  const all = C.minArtistPlays(rankingList(), 2).filter(r => !r.owned && !bought.has(r.key));     // todos los artistas con más de 1 reproducción
-  const missing = all.filter(r => !state.prices.has(r.key));
-  if (missing.length && !state.peeking) {
-    state.peeking = true;      // precios ya consultados antes (caché local): se pintan sin red
-    Promise.all(missing.map(r => discogs.peek(r).then(v => { if (v) state.prices.set(r.key, v); return !!v; })))
-      .then(found => { state.peeking = false; if (found.some(Boolean) && state.tab === 'comprar') render(); });
-  }
-  const withPrice = r => C.estimate({ discogs: state.prices.get(r.key) }, r.offers) != null;
-  const filters = {
-    todos: () => true, precio: withPrice,
-    stock: r => r.offers.some(o => o.available), preventa: r => r.offers.some(o => o.preorder)
-  };
-  const list = all.filter(filters[state.filter]);
-  if (state.filter === 'precio') fetchPrices(all);          // al elegir «Con precio» se consulta Discogs (de uno en uno, con caché de 12 h)
+  // La parte pesada se pinta en el cuadro siguiente: primero sale el esqueleto gris con la forma de la lista (si la última vez tardó) y luego el contenido
+  const build = () => {
+    const root = h('div');
+    const bought = W.boughtKeys(state.wish), wanted = W.wantedKeys(state.wish);
+    const all = C.minArtistPlays(rankingList(), 2).filter(r => !r.owned && !bought.has(r.key));     // todos los artistas con más de 1 reproducción
+    const missing = all.filter(r => !state.prices.has(r.key));
+    if (missing.length && !state.peeking) {
+      state.peeking = true;      // precios ya consultados antes (caché local): se pintan sin red
+      Promise.all(missing.map(r => discogs.peek(r).then(v => { if (v) state.prices.set(r.key, v); return !!v; })))
+        .then(found => { state.peeking = false; if (found.some(Boolean) && state.tab === 'comprar') render(); });
+    }
+    const withPrice = r => C.estimate({ discogs: state.prices.get(r.key) }, r.offers) != null;
+    const filters = {
+      todos: () => true, precio: withPrice,
+      stock: r => r.offers.some(o => o.available), preventa: r => r.offers.some(o => o.preorder)
+    };
+    const list = all.filter(filters[state.filter]);
+    if (state.filter === 'precio') fetchPrices(all);          // al elegir «Con precio» se consulta Discogs (de uno en uno, con caché de 12 h)
 
-  if (!all.length) {
-    root.append(h('div', { class: 'empty' }, 'Aquí saldrá lo que escuchas y no tienes en vinilo.'));
+    if (!all.length) {
+      root.append(h('div', { class: 'empty' }, 'Aquí saldrá lo que escuchas y no tienes en vinilo.'));
+      return root;
+    }
+    root.append(h('p', { class: 'muted' }, 'Lo que escuchas y no tienes en vinilo. Toca un disco para ver dónde comprarlo.'));
+    root.append(h('div', { class: 'chips' }, [['todos', 'Todos'], ['precio', 'Con precio'], ['stock', 'En stock'], ['preventa', 'Preventa']]
+      .map(([k, label]) => h('button', { class: 'chip', 'aria-pressed': String(state.filter === k), onclick: () => { state.priceRun++; state.priceProgress.running = false; state.filter = k; render(); } }, label))));
+    if (state.filter === 'precio') {
+      const pp = state.priceProgress;
+      root.append(h('p', { class: 'muted' + (pp.error ? ' bad' : ''), role: 'status', id: 'price-progress' },
+        pp.error ? pp.error : pp.running ? `Consultando precios en Discogs… ${pp.done}/${pp.total}` : discogs.hasToken() ? 'Tienda y Discogs (copia más barata).' : 'Solo precios de tienda. Para los de Discogs, añade tu token en Ajustes.'));
+    }
+    root.append(list.length ? h('ul', { class: 'list' }, list.map((r, i) => albumRow({ ...r, wished: wanted.has(r.key) }, i))) : h('div', { class: 'empty' }, state.filter === 'precio' && state.priceProgress.running ? 'Buscando precios…' : 'Nada con este filtro.'));
+
     return root;
+  };
+  const slot = h('div');
+  const run = () => { const t0 = performance.now(); const c = build(); state.buyCost = performance.now() - t0; return c; };
+  if (state.buyCost !== undefined && state.buyCost < 40) slot.append(run());
+  else {
+    slot.append(skeletonList());
+    const mine = ++buyToken;
+    requestAnimationFrame(() => setTimeout(() => { if (mine === buyToken && slot.isConnected) slot.replaceChildren(run()); }, 0));
   }
-  root.append(h('p', { class: 'muted' }, 'Lo que escuchas y no tienes en vinilo. Toca un disco para ver dónde comprarlo.'));
-  root.append(h('div', { class: 'chips' }, [['todos', 'Todos'], ['precio', 'Con precio'], ['stock', 'En stock'], ['preventa', 'Preventa']]
-    .map(([k, label]) => h('button', { class: 'chip', 'aria-pressed': String(state.filter === k), onclick: () => { state.priceRun++; state.priceProgress.running = false; state.filter = k; render(); } }, label))));
-  if (state.filter === 'precio') {
-    const pp = state.priceProgress;
-    root.append(h('p', { class: 'muted' + (pp.error ? ' bad' : ''), role: 'status', id: 'price-progress' },
-      pp.error ? pp.error : pp.running ? `Consultando precios en Discogs… ${pp.done}/${pp.total}` : discogs.hasToken() ? 'Tienda y Discogs (copia más barata).' : 'Solo precios de tienda. Para los de Discogs, añade tu token en Ajustes.'));
-  }
-  root.append(list.length ? h('ul', { class: 'list' }, list.map((r, i) => albumRow({ ...r, wished: wanted.has(r.key) }, i))) : h('div', { class: 'empty' }, state.filter === 'precio' && state.priceProgress.running ? 'Buscando precios…' : 'Nada con este filtro.'));
+  root.append(slot);
   return root;
 }
 

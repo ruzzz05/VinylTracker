@@ -48,7 +48,16 @@ export const wantedKeys = list => keysOf(list, 'wanted');
 
 // ---------- avisos ----------
 // Ofertas de tienda con stock o preventa para este elemento
-export const liveOffers = (w, storeIndex) => matchStores(w, storeIndex || []).filter(o => o.available || o.preorder);
+const offersMemo = new WeakMap();      // lista de tiendas -> (artista|álbum -> ofertas): la lista se ordena y se pinta muchas veces
+export function liveOffers(w, storeIndex) {
+  const idx = storeIndex || [];
+  let m = offersMemo.get(idx);
+  if (!m) offersMemo.set(idx, m = new Map());
+  const k = w.artist + '|' + w.name;
+  let o = m.get(k);
+  if (!o) m.set(k, o = matchStores(w, idx).filter(x => x.available || x.preorder));
+  return o;
+}
 
 // Qué está "disponible" ahora: solo las tiendas (clave 'store:URL'). Discogs NO cuenta.
 export const liveKeys = (w, offers) => offers.map(o => 'store:' + o.url);
