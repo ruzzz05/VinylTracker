@@ -23,7 +23,7 @@ import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 import * as T from './tint.js';
 
-const VERSION = '1.14.1';
+const VERSION = '1.14.2';
 // Oscuro por defecto (es el diseño Tinta); «auto» sigue al sistema
 const applyTheme = v => { if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v === 'light' ? 'light' : 'dark'; };
 applyTheme(prefs.get('theme'));
@@ -186,13 +186,25 @@ function markTab() {
 document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => go(b.dataset.tab)));
 
 // opts.enter: al cambiar de pestaña la pantalla se funde y las primeras filas entran escalonadas
+const tabCost = {};      // lo que tardó la última vez en construirse cada pestaña (ms)
+let paintToken = 0;
 function render(opts = {}) {
+  const tab = state.tab;
   const paint = () => {
-    view.replaceChildren(({ ranking: vRanking, stats: vStats, coleccion: vCollection, comprar: vBuy, conciertos: vConcerts, ajustes: vSettings })[state.tab]());
+    const t0 = performance.now();
+    view.replaceChildren(({ ranking: vRanking, stats: vStats, coleccion: vCollection, comprar: vBuy, conciertos: vConcerts, ajustes: vSettings })[tab]());
+    tabCost[tab] = performance.now() - t0;
     setStatus('');
     if (opts.enter && !reduceMotion()) staggerIn();
     applyTint();
   };
+  const token = ++paintToken;
+  // Si la pestaña es pesada: primero sale al instante el esqueleto gris y el contenido se construye en el cuadro siguiente
+  if (tab !== 'coleccion' && tab !== 'comprar' && tab !== 'ajustes' && (tabCost[tab] === undefined || tabCost[tab] > 40)) {
+    view.replaceChildren(skeletonList(8));
+    requestAnimationFrame(() => setTimeout(() => { if (token === paintToken && state.tab === tab) paint(); }, 0));
+    return;
+  }
   paint();
 }
 
@@ -1016,6 +1028,7 @@ async function boot() {
 function showLanding(url, reason) {
   const box = h('textarea', { readonly: true, rows: '5', style: 'width:100%;font-size:12px;user-select:text;-webkit-user-select:text' });
   box.value = url;
+  paintToken++;                                  // que un pintado pendiente no tape este aviso
   view.replaceChildren(h('div', null,
     h('div', { class: 'card' }, h('h3', null, 'Casi listo: falta un paso'),
       h('p', null, reason),
