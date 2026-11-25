@@ -23,7 +23,7 @@ import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 import * as T from './tint.js';
 
-const VERSION = '1.13.5';
+const VERSION = '1.14.0';
 // Oscuro por defecto (es el diseño Tinta); «auto» sigue al sistema
 const applyTheme = v => { if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v === 'light' ? 'light' : 'dark'; };
 applyTheme(prefs.get('theme'));
@@ -78,7 +78,7 @@ const state = {
   tab: prefs.get('tab', 'ranking'),
   months: Number(prefs.get('months', '12')),
   history: {}, apiAlbums: {}, apiAt: 0, historyInfo: null,
-  base: [], extras: [], extrasBad: [], extrasAt: 0, owned: null, collection: [],
+  base: [], extras: [], extrasBad: [], extrasLost: [], extrasAt: 0, owned: null, collection: [],
   storeIndex: [], storeDate: '',
   stats: null, rankView: prefs.get('rankView', 'albums') === 'stats' ? 'albums' : prefs.get('rankView', 'albums'),
   live: L.emptyLive(), liveStats: null, liveHistory: {}, effStats: null, effHistory: {},
@@ -116,7 +116,7 @@ async function loadAll() {
   state.wish = await store.get('wishlist', []);
   state.manual = await store.get('manual', []);
   const ex = await fb.cachedExtras();
-  if (ex) { state.extras = ex.albums; state.extrasBad = ex.bad || []; state.extrasAt = ex.at; }
+  if (ex) { state.extras = ex.albums; state.extrasBad = ex.bad || []; state.extrasLost = ex.lost || []; state.extrasAt = ex.at; }
   state.csvAt = await collection.csvAt();
   rebuildCollection();
   try {
@@ -124,6 +124,22 @@ async function loadAll() {
     const d = await r.json();
     state.storeIndex = C.indexStores(d); state.storeDate = d.generated;
   } catch (e) { /* sin datos de tiendas todavía */ }
+}
+
+// Discos que estaban en la nube y ya no (otra app o dispositivo pisó la lista): se pueden restaurar
+const applyExtras = r => { state.extras = r.albums; state.extrasBad = r.bad || []; state.extrasLost = r.lost || []; state.extrasAt = r.at; };
+function lostCard() {
+  const names = state.extrasLost.slice(0, 5).map(a => [a.name, a.artist].filter(Boolean).join(' · ')).join(', ') + (state.extrasLost.length > 5 ? '…' : '');
+  const act = fn => async e => {
+    e.target.disabled = true;
+    try { applyExtras(await fn()); rebuildCollection(); toast('Hecho'); } catch (err) { toast(err.message, true); }
+    render();
+  };
+  return h('div', { class: 'card', id: 'lost-card' },
+    h('p', null, `⚠ Han desaparecido ${state.extrasLost.length} disco${state.extrasLost.length === 1 ? '' : 's'} de la nube: ${names}.`),
+    h('p', { class: 'muted' }, 'Suele pasar si mi-app u otro dispositivo guarda con una lista antigua. Puedes recuperarlos.'),
+    h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: act(fb.restoreLost) }, 'Restaurar'),
+      h('button', { class: 'btn sec', onclick: act(fb.acceptCurrent) }, 'Ignorar (los quité yo)')));
 }
 
 function rebuildCollection() {
@@ -425,6 +441,7 @@ function vCollection() {
       h('button', { class: 'btn sec', onclick: () => addview.openAdd(addCtx) }, '+ Añadir disco')),
     h('div', { class: 'actions' },
       h('button', { class: 'btn sec', onclick: () => wv.scanSheet(addCtx, { onPick: r => addview.openAdd(addCtx, { prefill: addinfo.discogsInfo(r) }) }) }, 'Escanear código')));
+  if (state.extrasLost.length) root.append(lostCard());
   if (state.extrasBad.length) root.append(h('div', { class: 'card' },
     h('p', null, `⚠ Hay ${state.extrasBad.length} disco${state.extrasBad.length === 1 ? '' : 's'} en la nube que no se puede${state.extrasBad.length === 1 ? '' : 'n'} mostrar.`),
     h('button', { class: 'btn sec sm', onclick: showBadExtras }, 'Ver cuáles y por qué')));
@@ -484,7 +501,7 @@ const addCtx = {
   addManual: a => { state.manual = [a, ...state.manual]; saveManual(); },
   updateManual: a => { state.manual = state.manual.map(x => (x.id === a.id ? a : x)); saveManual(); },
   removeManual: id => { state.manual = state.manual.filter(x => x.id !== id); saveManual(); },
-  addToMiApp: async album => { const out = await fb.addAlbum(album); state.extras = out.albums; state.extrasBad = out.bad || []; state.extrasAt = out.at; rebuildCollection(); render(); }
+  addToMiApp: async album => { applyExtras(await fb.addAlbum(album)); rebuildCollection(); render(); }
 };
 function saveManual() { rebuildCollection(); store.set('manual', state.manual); scheduleCloud('manual'); if (state.tab === 'coleccion') render(); }
 
@@ -495,7 +512,7 @@ async function syncAll() {
   try {
     state.base = await collection.loadBase({ force: true });
     state.csvAt = await collection.csvAt();
-    if (fb.isLoggedIn()) { const r = await fb.readExtras({ force: true }); state.extras = r.albums; state.extrasBad = r.bad || []; state.extrasAt = r.at; }
+    if (fb.isLoggedIn()) applyExtras(await fb.readExtras({ force: true }));
     rebuildCollection();
     toast(fb.isLoggedIn() ? `Colección sincronizada: ${state.base.length} en mi-app y ${state.extras.length} añadidos en la nube` + (state.extrasBad.length ? ` (${state.extrasBad.length} no se pueden mostrar)` : '') : 'Colección sincronizada');
   } catch (e) { state.syncError = e.message; toast(e.message, true); }
@@ -769,7 +786,7 @@ function vSettings() {
     fb.isLoggedIn()
       ? [h('p', null, 'Sesión iniciada como ', h('b', null, fb.user()), fb.isOwner() ? ' (dueño: puedes añadir discos)' : ''),
         h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: syncExtras }, 'Sincronizar ahora'),
-          h('button', { class: 'btn danger', onclick: () => { fb.logout(); state.extras = []; state.extrasBad = []; rebuildCollection(); render(); } }, 'Cerrar sesión'))]
+          h('button', { class: 'btn danger', onclick: () => { fb.logout(); state.extras = []; state.extrasBad = []; state.extrasLost = []; rebuildCollection(); render(); } }, 'Cerrar sesión'))]
       : [field('Usuario', u), field('Contraseña', p),
         h('button', { class: 'btn', onclick: async e => {
           e.target.disabled = true;
@@ -950,7 +967,7 @@ async function boot() {
       toast('Spotify conectado'); await refreshApi();
     } catch (e) { showLanding(full, e.message); }
   } else if (fb.isLoggedIn()) {
-    fb.readExtras().then(r => { if (!r.fromCache) { state.extras = r.albums; state.extrasBad = r.bad || []; state.extrasAt = r.at; rebuildCollection(); render(); } })
+    fb.readExtras().then(r => { if (!r.fromCache) { applyExtras(r); rebuildCollection(); render(); } })
       .catch(e => { state.syncError = e.message; updateSyncUi(); });
   }
 }

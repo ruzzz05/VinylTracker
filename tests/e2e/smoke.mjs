@@ -48,7 +48,8 @@ const mk = (id, artist, name) => ({ id, artist, name, image: 'https://i.scdn.co/
 // Un disco en la nube con formato no válido (portada http): debe avisarse y NO borrarse al añadir otro
 const malo = { ...mk('BBBBBBBBBBBBBBBBBBBBBB', 'Roto', 'Disco roto'), image: 'http://inseguro/x.jpg' };
 let cloud = JSON.stringify({ albums: [mk('AAAAAAAAAAAAAAAAAAAAAA', 'Radiohead', 'OK Computer'), malo] });
-let patched = null;
+let patched = null, conflict = null, patchTries = 0, ut = 1;
+const stamp = () => new Date(Date.UTC(2026, 10, 25, 10, 0, ut)).toISOString();
 const vt = new Map();           // documentos vt-… de la copia en la nube
 await ctx.route('https://firestore.googleapis.com/**', r => {
   const m = /\/vinilos\/(vt-[^?]+)/.exec(r.request().url());
@@ -56,8 +57,13 @@ await ctx.route('https://firestore.googleapis.com/**', r => {
     if (r.request().method() === 'PATCH') { vt.set(m[1], JSON.parse(r.request().postData()).fields); return json(r, {}); }
     return vt.has(m[1]) ? json(r, { fields: vt.get(m[1]) }) : json(r, {}, 404);
   }
-  if (r.request().method() === 'PATCH') { patched = JSON.parse(r.request().postData()); cloud = patched.fields.json.stringValue; return json(r, {}); }
-  return json(r, { fields: { updatedAt: { integerValue: '1' }, json: { stringValue: cloud } } });
+  if (r.request().method() === 'PATCH') {
+    if (conflict) { cloud = conflict; conflict = null; ut++; patchTries++; return json(r, { error: { code: 400, status: 'FAILED_PRECONDITION', message: 'the document was changed' } }, 400); }   // otra app lo cambió a la vez
+    const m = /currentDocument\.updateTime=([^&]+)/.exec(r.request().url());
+    if (m && decodeURIComponent(m[1]) !== stamp()) return json(r, { error: { code: 400, status: 'FAILED_PRECONDITION' } }, 400);
+    patchTries++; patched = JSON.parse(r.request().postData()); cloud = patched.fields.json.stringValue; ut++; return json(r, {});
+  }
+  return json(r, { updateTime: stamp(), fields: { updatedAt: { integerValue: '1' }, json: { stringValue: cloud } } });
 });
 await ctx.route('https://open.spotify.com/oembed**', r => json(r, { title: 'Nuevo Disco', thumbnail_url: 'https://i.scdn.co/nuevo.jpg' }));
 await ctx.route('https://itunes.apple.com/**', r => {
@@ -487,6 +493,43 @@ await page.click('.sheet >> text=Guardar disco');
 await page.waitForSelector('.sheet', { state: 'hidden' });
 assert.ok(patched && patched.fields.json.stringValue.includes('Álbum Completo') && patched.fields.json.stringValue.includes('"year":2021') && patched.fields.json.stringValue.includes('bedroom pop'), 'no se guardó con toda la info en mi-app');
 await page.screenshot({ path: path.join(SHOTS, '7e-spotify-completo.png') });
+// otra app cambia el documento justo mientras se guarda: la app vuelve a leer y reintenta, sin pisar lo suyo
+{
+  const lista = JSON.parse(cloud).albums;
+  conflict = JSON.stringify({ albums: [...lista, { ...mk('CCCCCCCCCCCCCCCCCCCCCC', 'Colado', 'Disco Colado') }] });
+  patchTries = 0;
+  await page.click('text=+ Añadir disco');
+  await page.fill('.sheet input[type=url][placeholder^="Opcional"]', 'https://open.spotify.com/album/DDDDDDDDDDDDDDDDDDDDDD');
+  await page.waitForFunction(() => document.querySelector('.sheet input[placeholder="Nombre del álbum"]').value !== '');
+  await page.fill('.sheet input[placeholder="Nombre del álbum"]', 'Segundo Completo');
+  await page.fill('.sheet input[placeholder="Artista"]', 'Artista Dos');
+  await page.fill('.sheet input[placeholder^="Portada"]', 'https://i.scdn.co/dos.jpg');
+  await page.click('.sheet >> text=Guardar disco');
+  await page.waitForSelector('.sheet', { state: 'hidden' });
+  const fin = JSON.parse(cloud).albums.map(a => a.name);
+  assert.ok(fin.includes('Segundo Completo') && fin.includes('Disco Colado') && fin.includes('Álbum Completo'), 'el reintento debe conservar lo que añadió la otra app: ' + fin);
+  assert.ok(patchTries >= 2, 'debe haber reintentado: ' + patchTries);
+}
+// un disco desaparece de la nube (otra app guardó con una lista vieja): aviso, y «Restaurar» lo devuelve
+{
+  const lista = JSON.parse(cloud).albums;
+  cloud = JSON.stringify({ albums: lista.filter(a => a.name !== 'Álbum Completo') }); ut++;
+  await page.click('#sync-btn');
+  await page.waitForSelector('#lost-card');
+  assert.match(await page.textContent('#lost-card'), /Han desaparecido 1 disco.*Álbum Completo/);
+  await page.screenshot({ path: path.join(SHOTS, '7g-desaparecido.png') });
+  await page.click('#lost-card >> text=Restaurar');
+  await page.waitForSelector('#lost-card', { state: 'detached' });
+  assert.ok(JSON.parse(cloud).albums.some(a => a.name === 'Álbum Completo'), 'Restaurar debe devolver el disco a la nube');
+  // quitarlo a propósito: «Ignorar» da por buena la lista actual
+  cloud = JSON.stringify({ albums: JSON.parse(cloud).albums.filter(a => a.name !== 'Segundo Completo') }); ut++;
+  await page.click('#sync-btn');
+  await page.waitForSelector('#lost-card');
+  await page.click('#lost-card >> text=Ignorar');
+  await page.waitForSelector('#lost-card', { state: 'detached' });
+  await page.click('#sync-btn'); await page.waitForTimeout(600);
+  assert.equal((await page.$$('#lost-card')).length, 0, 'tras ignorar no debe volver a avisar');
+}
 await page.click('[data-tab=ranking]');
 
 // ---------- Olvidados: artistas / canciones que escuchaste mucho y hace tiempo que no suenan ----------

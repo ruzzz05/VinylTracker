@@ -244,3 +244,17 @@ test('safeImg: https e imágenes incrustadas sí; scripts y enlaces raros no', a
   assert.equal(safeImg(''), '#');
   assert.equal(safeUrl('data:image/png;base64,AAAA'), '#');            // para enlaces nunca
 });
+
+test('lostAlbums / nextBackup: detectan discos que desaparecen y los conservan hasta decidir', () => {
+  const a = { id: 'A'.repeat(22), artist: 'X', name: 'Uno' }, b = { id: 'B'.repeat(22), artist: 'Y', name: 'Dos' }, c = { id: 'C'.repeat(22), artist: 'Z', name: 'Tres' };
+  assert.deepEqual(C.lostAlbums([a, b], [a]), [b]);
+  assert.deepEqual(C.lostAlbums([a], [a, b]), []);
+  assert.deepEqual(C.lostAlbums(undefined, [a]), []);
+  assert.deepEqual(C.lostAlbums([{ artist: 'sin id' }], []), []);               // sin id no se puede seguir
+  let r = C.nextBackup([], [a, b]);
+  assert.deepEqual(r.backup, [a, b]); assert.deepEqual(r.lost, []);
+  r = C.nextBackup([a, b], [a, c]);                                              // b desapareció y c es nuevo
+  assert.deepEqual(r.lost, [b]); assert.deepEqual(r.backup.map(x => x.id), [a.id, b.id, c.id]);
+  r = C.nextBackup(r.backup, [a, b, c]);                                         // restaurado: ya no falta nada
+  assert.deepEqual(r.lost, []); assert.deepEqual(r.backup.map(x => x.id), [a.id, b.id, c.id]);
+});

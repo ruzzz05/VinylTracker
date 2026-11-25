@@ -409,3 +409,18 @@ export function makeManual({ name, artist, year, tags, image, spotifyUrl, id, no
   return { ok: true, album: { id: id || 'm' + (now || Date.now()).toString(36) + Math.random().toString(36).slice(2, 6), artist: a, name: n, image: img,
     tags: Array.isArray(tags) ? tags : normalizeTags(tags), url: sp ? sp.url : '', year: cleanYear(year), addedAt: now || Date.now(), manual: true } };
 }
+
+
+// Discos que estaban en la última lista buena y ya no están en la nube (se siguen por id). -> lista de los desaparecidos
+export function lostAlbums(backup, current) {
+  const ids = new Set((current || []).map(a => a && a.id).filter(Boolean));
+  return (backup || []).filter(a => a && a.id && !ids.has(a.id));
+}
+
+// Copia de seguridad tras una lectura: si no falta nada, es la lista actual; si falta algo, se conservan los que faltan (hasta decidir) y se suman los nuevos
+export function nextBackup(prev, current) {
+  const lost = lostAlbums(prev, current);
+  if (!lost.length) return { backup: (current || []).filter(a => a && a.id), lost };
+  const have = new Set((prev || []).map(a => a && a.id));
+  return { backup: [...(prev || []), ...(current || []).filter(a => a && a.id && !have.has(a.id))], lost };
+}
