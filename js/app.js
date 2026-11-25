@@ -23,7 +23,7 @@ import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 import * as T from './tint.js';
 
-const VERSION = '1.13.2';
+const VERSION = '1.13.3';
 // Oscuro por defecto (es el diseño Tinta); «auto» sigue al sistema
 const applyTheme = v => { if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v === 'light' ? 'light' : 'dark'; };
 applyTheme(prefs.get('theme'));
@@ -45,6 +45,9 @@ setTimeout(fixAppHeight, 300); setTimeout(fixAppHeight, 1200);
 
 const $ = s => document.querySelector(s);
 const view = $('#view');
+// Sin zoom: iOS ignora a veces user-scalable=no, así que se bloquean también los gestos de pellizco.
+// (Con el zoom permitido, iOS puede encoger la ventana de la app instalada y el menú inferior queda tapado por una banda.)
+for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, e => e.preventDefault());
 
 // ---------- utilidades de interfaz (todo con textContent: nada de HTML de terceros) ----------
 const when = ts => (ts ? new Date(ts).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' }) : '—');

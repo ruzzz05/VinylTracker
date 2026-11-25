@@ -59,7 +59,7 @@ const bar = page => page.$eval('.tabs', e => { const r = e.getBoundingClientRect
     assert.deepEqual(await bar(page), b0);
     assert.equal(await page.$eval('#view', e => e.scrollTop), 0);
   }
-  assert.ok(await page.$eval('meta[name=viewport]', e => !/user-scalable=no|maximum-scale/.test(e.content)), 'el zoom no debe estar bloqueado (accesibilidad)');
+  assert.ok(await page.$eval('meta[name=viewport]', e => /user-scalable=no/.test(e.content)), 'sin bloquear el zoom, iOS encoge la ventana de la app instalada y el menú queda tapado');
   await ctx.close();
 }
 
