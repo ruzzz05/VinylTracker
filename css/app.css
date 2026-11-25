@@ -42,8 +42,11 @@ html { background: var(--bg); height: 100%; overflow: hidden; touch-action: mani
    Así la barra inferior nunca se mueve (ni con el rebote de iOS ni con la barra de Safari). */
 body {
   position: fixed; top: 0; left: 0; right: 0; height: var(--app-h, 100%); margin: 0; display: flex; flex-direction: column; overflow: hidden;
-  background: radial-gradient(120% 60% at 50% -5%, var(--glow), var(--bg) 70%); color: var(--text); font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-  padding-top: env(safe-area-inset-top); overscroll-behavior: none;
+  background:
+    linear-gradient(var(--bg), transparent calc(env(safe-area-inset-top) + 28px)),      /* franja limpia bajo la hora y la batería: el color de ambiente empieza debajo */
+    radial-gradient(120% 55% at 50% 10%, var(--glow), var(--bg) 70%);
+  color: var(--text); font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  padding-top: calc(env(safe-area-inset-top) + 8px); overscroll-behavior: none;
   -webkit-text-size-adjust: 100%; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
 }
 input, textarea { -webkit-user-select: text; user-select: text; }

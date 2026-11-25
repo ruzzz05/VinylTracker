@@ -23,7 +23,7 @@ import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 import * as T from './tint.js';
 
-const VERSION = '1.13.1';
+const VERSION = '1.13.2';
 // Oscuro por defecto (es el diseño Tinta); «auto» sigue al sistema
 const applyTheme = v => { if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v === 'light' ? 'light' : 'dark'; };
 applyTheme(prefs.get('theme'));
