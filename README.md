@@ -23,6 +23,9 @@ cuáles te faltan, **cuánto cuestan** y **dónde hay stock** (o preventa).
 - **Fotos de artista** en la lista de Artistas: de Spotify si está conectado y, si no, de Discogs (con tu token). Se guardan en el móvil, así que cada artista se consulta una sola vez.
 - **En vivo** (con Spotify conectado): una tarjeta **«Suena ahora»** (con aviso de si ya lo tienes en vinilo) y un registro propio que se actualiza solo cada minuto y al volver a la app, y que se suma a Ranking y Estadísticas. Límites: Spotify solo recuerda tus últimas 50 canciones y la app solo puede consultarlas mientras está abierta, así que ábrela de vez en cuando; la duración de cada canción se toma completa (aproximada). Al importar un historial, lo que ya cubre deja de contarse dos veces.
 
+## Diseño
+Estilo **Tinta**: oscuro por defecto (también claro y automático en Ajustes), cristal, un **menú de iconos** (solo la pestaña activa enseña su nombre) y **color de ambiente**: cada pantalla toma el color dominante de la portada que la protagoniza (`js/tint.js`). Movimiento sobrio y que responde a lo que haces: la pantalla se funde al cambiar de pestaña, las filas y las barras entran escalonadas, las fichas suben y bajan, las cifras de Estadísticas cuentan hasta su valor y «Suena ahora» lleva un igualador. Todo se apaga con «reducir movimiento» del sistema. El zoom del navegador no está bloqueado.
+
 ## Instalar en el iPhone
 1. Abre la URL en **Safari**.
 2. Compartir → **Añadir a pantalla de inicio**.

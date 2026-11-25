@@ -21,9 +21,11 @@ import * as wv from './wishview.js';
 import { concertsView } from './concertsview.js';
 import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
+import * as T from './tint.js';
 
-const VERSION = '1.12.1';
-const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
+const VERSION = '1.13.0';
+// Oscuro por defecto (es el diseño Tinta); «auto» sigue al sistema
+const applyTheme = v => { if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v === 'light' ? 'light' : 'dark'; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
 // (el de la barra de estado) y la barra inferior se queda flotando con un hueco debajo.
@@ -43,8 +45,6 @@ setTimeout(fixAppHeight, 300); setTimeout(fixAppHeight, 1200);
 
 const $ = s => document.querySelector(s);
 const view = $('#view');
-// Sin zoom: iOS ignora a veces user-scalable=no, así que se bloquean también los gestos de pellizco
-for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, e => e.preventDefault());
 
 // ---------- utilidades de interfaz (todo con textContent: nada de HTML de terceros) ----------
 const when = ts => (ts ? new Date(ts).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
@@ -126,11 +126,15 @@ function rebuildCollection() {
 }
 
 // ---------- navegación ----------
+const reduceMotion = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 function go(tab) {
   state.priceRun++; state.priceProgress.running = false;
+  const changed = tab !== state.tab;
   state.tab = tab; prefs.set('tab', tab);
   markTab();
-  render();
+  view.scrollTop = 0;
+  render({ enter: changed });
   view.scrollTop = 0;
 }
 function markTab() {
@@ -140,10 +144,62 @@ function markTab() {
 }
 document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => go(b.dataset.tab)));
 
-function render() {
-  view.replaceChildren(({ ranking: vRanking, stats: vStats, coleccion: vCollection, comprar: vBuy, conciertos: vConcerts, ajustes: vSettings })[state.tab]());
-  setStatus('');
+// opts.enter: al cambiar de pestaña la pantalla se funde y las primeras filas entran escalonadas
+function render(opts = {}) {
+  const paint = () => {
+    view.replaceChildren(({ ranking: vRanking, stats: vStats, coleccion: vCollection, comprar: vBuy, conciertos: vConcerts, ajustes: vSettings })[state.tab]());
+    setStatus('');
+    if (opts.enter && !reduceMotion()) staggerIn();
+    applyTint();
+  };
+  paint();
 }
+
+// Entrada escalonada: se marca #view solo durante un instante, para que los repintados normales no la repitan
+let enterTimer;
+function staggerIn() {
+  const mark = sel => view.querySelectorAll(sel).forEach((el, i) => el.style.setProperty('--i', Math.min(i, 12)));
+  mark('.list > li'); mark('.wall > *'); mark('.cc-bars .cc-bar'); mark('.card, .tiles > *');
+  view.querySelectorAll('.cc-bars').forEach(g => [...g.querySelectorAll('.cc-bar')].forEach((b, i) => b.style.setProperty('--i', i)));
+  view.classList.add('enter');
+  countUp(view.querySelector('.hero .big'));
+  clearTimeout(enterTimer);
+  enterTimer = setTimeout(() => view.classList.remove('enter'), 900);
+}
+
+// Cifras que suben hasta su valor (38 h 12 min: cada número se interpola desde 0)
+function countUp(el, ms = 750) {
+  if (!el || reduceMotion()) return;
+  const text = el.textContent;
+  if (!/\d/.test(text)) return;
+  const t0 = performance.now();
+  const step = now => {
+    const p = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = p >= 1 ? text : text.replace(/\d+/g, m => String(Math.round(+m * e)));
+    if (p < 1 && el.isConnected) requestAnimationFrame(step);
+    else if (el.isConnected) el.textContent = text;
+  };
+  requestAnimationFrame(step);
+}
+
+// ---------- Color de ambiente: cada pantalla toma el color dominante de la portada que la protagoniza ----------
+function tintAlbum() {
+  if (state.tab === 'ranking' && state.now) return { image: state.now.image, key: state.now.artist + state.now.album };
+  if (state.tab === 'coleccion') { const a = state.manual[0] || state.extras[state.extras.length - 1] || state.collection[0]; return a ? { image: a.image, key: a.artist + a.name } : null; }
+  if (state.tab === 'ranking' || state.tab === 'stats' || state.tab === 'comprar') { const r = rankingList()[0]; return r ? { image: r.image, key: r.artist + r.name } : null; }
+  return null;
+}
+let tintToken = 0;
+function setTint(hex) { document.documentElement.style.setProperty('--tint', hex); }
+function applyTint() {
+  const a = tintAlbum(), me = ++tintToken;
+  if (!a) return setTint(T.DEFAULT_TINT);
+  const url = a.image && imgcache.resolve(a.image);
+  const known = url && T.peekTint(url);
+  setTint(known || T.normalizeTint(hexToRgb(T.hashTint(a.key))));
+  if (url && known === undefined) T.tintFromImage(url).then(hex => { if (hex && me === tintToken) setTint(hex); });
+}
+const hexToRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 
 // ---------- Estadísticas (una sola página: periodo, tiempo, una gráfica y tus tops) ----------
 function vStats() {
@@ -271,7 +327,7 @@ function nowCard() {
   album.offers = C.matchStores(album, state.storeIndex);
   const pct = n.duration ? Math.min(100, n.progress / n.duration * 100) : 0;
   return h('button', { class: 'nowcard', onclick: () => openSheet(album) }, coverEl(album),
-    h('div', { class: 't' }, h('span', { class: 'nowlbl' }, n.playing ? '♪ Suena ahora' : '⏸ En pausa'), h('b', null, n.title), h('span', null, `${n.artist} · ${n.album}`),
+    h('div', { class: 't' }, h('span', { class: 'nowlbl' }, h('span', { class: 'eq' + (n.playing ? '' : ' paused'), 'aria-hidden': 'true' }, h('i'), h('i'), h('i')), n.playing ? 'Suena ahora' : 'En pausa'), h('b', null, n.title), h('span', null, `${n.artist} · ${n.album}`),
       album.owned ? h('span', { class: 'own' }, '✓ En tu colección') : h('span', { class: 'chip' }, 'No lo tienes en vinilo'),
       h('div', { class: 'bar' }, h('i', { id: 'now-bar', style: `width:${pct}%` }))));
 }
@@ -396,7 +452,7 @@ function showPanel(...kids) {
   if (state.scanStop) state.scanStop();
   const sheet = $('#sheet');
   sheet.replaceChildren(h('div', { class: 'panel', role: 'dialog' }, closeX(), ...kids));
-  sheet.hidden = false;
+  openSheetEl(sheet);
   sheet.onclick = e => { if (e.target === sheet) closeSheet(); };
 }
 
@@ -618,16 +674,23 @@ async function wishCheck() {
 const storeNames = () => { const n = [...new Set(state.storeIndex.map(o => o.store))]; return n.length > 1 ? n.slice(0, -1).join(', ') + ' y ' + n[n.length - 1] : n[0] || 'las tiendas'; };
 
 // ---------- Ficha de álbum ----------
+let closeTimer;
 function closeSheet() {
   if (state.scanStop) state.scanStop();      // apaga la cámara si el lector estaba abierto
-  $('#sheet').hidden = true; $('#sheet').replaceChildren();
+  const sheet = $('#sheet');
+  if (sheet.hidden) return;
+  if (reduceMotion()) { sheet.hidden = true; sheet.replaceChildren(); return; }
+  sheet.classList.add('closing');            // se desliza hacia abajo y luego se oculta
+  clearTimeout(closeTimer);
+  closeTimer = setTimeout(() => { sheet.classList.remove('closing'); sheet.hidden = true; sheet.replaceChildren(); }, 230);
 }
+const openSheetEl = sheet => { clearTimeout(closeTimer); sheet.classList.remove('closing'); sheet.hidden = false; };
 
 async function openSheet(r) {
   const sheet = $('#sheet');
   const body = h('div');
   const panel = h('div', { class: 'panel', role: 'dialog', 'aria-label': r.name }, closeX(), body);
-  sheet.replaceChildren(panel); sheet.hidden = false;
+  sheet.replaceChildren(panel); openSheetEl(sheet);
   sheet.onclick = e => { if (e.target === sheet) closeSheet(); };
 
   const put = (...kids) => body.replaceChildren(...kids.flat().filter(k => k != null && k !== false));
@@ -772,7 +835,7 @@ function vSettings() {
     h('button', { class: 'btn', onclick: () => { prefs.set('discogs.user', du.value.trim()); prefs.set('discogs.token', dt.value.trim()); toast('Guardado'); } }, 'Guardar')));
 
   // Tema
-  const theme = h('select', { 'aria-label': 'Tema' }, [['', 'Automático (del sistema)'], ['light', 'Claro'], ['dark', 'Oscuro']].map(([v, l]) => h('option', { value: v }, l)));
+  const theme = h('select', { 'aria-label': 'Tema' }, [['', 'Oscuro'], ['light', 'Claro'], ['auto', 'Automático (del sistema)']].map(([v, l]) => h('option', { value: v }, l)));
   theme.value = prefs.get('theme');
   theme.addEventListener('change', () => { prefs.set('theme', theme.value); applyTheme(theme.value); });
   root.append(h('div', { class: 'card' }, h('h3', null, 'Tema'), theme));

@@ -42,7 +42,7 @@ async function keep(url) {
 // <img> con portada (lazy:false para imágenes que se cargan sin estar aún en pantalla). Si ya se vio, sale al instante; si falla, llama a onFail.
 export function cachedImg(url, { cls = '', onFail, onLoad, lazy = true } = {}) {
   const u = safeUrl(url), known = isCached(u);
-  const img = h('img', { class: cls, src: resolve(u), alt: '', referrerpolicy: 'no-referrer', decoding: known ? 'sync' : 'async', loading: known || !lazy ? null : 'lazy' });
+  const img = h('img', { class: (cls + (known ? '' : ' fade')).trim(), src: resolve(u), alt: '', referrerpolicy: 'no-referrer', decoding: known ? 'sync' : 'async', loading: known || !lazy ? null : 'lazy' });
   img.addEventListener('load', () => { seen.add(u); keep(u); if (onLoad) onLoad(img); });
   if (onFail) img.addEventListener('error', () => onFail(img));
   return img;

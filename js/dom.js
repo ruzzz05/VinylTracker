@@ -15,7 +15,7 @@ export function h(tag, props, ...kids) {
 export const safeUrl = u => (/^https?:\/\//i.test(u || '') ? u : '#');
 
 // ---------- Tooltip de los gráficos: un solo globo; en el móvil se abre al tocar y se cierra al tocar fuera ----------
-let tip;
+let tip, tipAt = 0;
 export function hideTip() { if (tip) tip.hidden = true; }
 
 export function showTip(target, title, value) {
@@ -23,10 +23,10 @@ export function showTip(target, title, value) {
     tip = h('div', { class: 'tip', role: 'status', hidden: true });
     document.body.append(tip);
     document.addEventListener('pointerdown', e => { if (!e.target.closest('[data-tip]')) hideTip(); }, true);
-    window.addEventListener('scroll', hideTip, true);
+    window.addEventListener('scroll', () => { if (performance.now() - tipAt > 300) hideTip(); }, true);   // el scroll que provoca el propio toque (foco) no lo oculta
   }
   tip.replaceChildren(h('b', null, value), h('span', null, title));
-  tip.hidden = false;
+  tip.hidden = false; tipAt = performance.now();
   const r = target.getBoundingClientRect(), w = tip.offsetWidth, hgt = tip.offsetHeight;
   const x = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), window.innerWidth - w - 8);
   const y = r.top - hgt - 8 > 8 ? r.top - hgt - 8 : r.bottom + 8;

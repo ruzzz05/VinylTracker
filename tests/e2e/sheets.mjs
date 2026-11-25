@@ -179,6 +179,37 @@ for (const device of ['iPhone 14', 'iPhone SE']) {
   await ctx.close();
 }
 
+// ---- movimiento: el menú es de iconos (solo la activa enseña su nombre), la ficha se anima y todo se apaga con «reducir movimiento»
+{
+  const { ctx, page } = await newPage('iPhone 14');
+  await page.waitForTimeout(600);                     // el nombre de la pestaña activa se despliega con una transición
+  const labels = await page.$$eval('.dock button', bs => bs.map(b => ({ on: b.getAttribute('aria-current') === 'page', aria: b.getAttribute('aria-label'), w: b.querySelector('span').getBoundingClientRect().width, svg: !!b.querySelector('svg') })));
+  assert.equal(labels.length, 5); assert.ok(labels.every(l => l.svg && l.aria), 'cada botón del menú lleva icono y nombre accesible');
+  assert.ok(labels.filter(l => l.on).every(l => l.w > 20) && labels.filter(l => !l.on).every(l => l.w < 2), 'solo la pestaña activa enseña su nombre');
+  await page.click('[data-tab=conciertos]');
+  await page.waitForTimeout(1200);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--tint').trim()), 'rgb(42, 157, 143)', 'las pantallas sin portada vuelven al color base');
+  await page.click('[data-tab=comprar]');
+  await page.waitForSelector('.list .row');
+  await page.click('.list .row >> nth=0');
+  await page.waitForSelector('.sheet .panel');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.sheet .panel')).animationName), 'sheet-in');
+  await ctx.close();
+  const rm = await browser.newContext({ ...devices['iPhone 14'], locale: 'es-ES', reducedMotion: 'reduce' });
+  const pg = await rm.newPage();
+  await pg.route('https://ruzzz05.github.io/mi-app/**', r => r.fulfill({ status: 200, contentType: 'text/csv', headers: { 'access-control-allow-origin': '*' }, body: CSV }));
+  await pg.goto(BASE);
+  await pg.click('[data-tab=coleccion]');
+  await pg.waitForSelector('.wall .tile');
+  await pg.click('text=Disco aleatorio');
+  await pg.waitForSelector('.sheet .panel');
+  const dur = await pg.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.sheet .panel')).animationDuration));
+  assert.ok(dur < 0.001, 'con «reducir movimiento» no hay animaciones: ' + dur);
+  await pg.click('.sheet-x');
+  await pg.waitForSelector('#sheet', { state: 'hidden', timeout: 1500 });
+  await rm.close();
+}
+
 function vpCenterX(page) { return page.viewportSize().width / 2; }
 
 assert.deepEqual(errors, []);
