@@ -32,17 +32,18 @@ export function rediscoverView(ctx) {
     h('button', { 'aria-pressed': String(kind === k), onclick: () => { prefs.set('rd.kind', k); redo(); } }, l))));
   root.append(h('div', { class: 'seg', role: 'group', 'aria-label': 'Sin escuchar desde hace' }, MONTHS.map(([m, l]) =>
     h('button', { 'aria-pressed': String(months === m), onclick: () => { prefs.set('rd.months', String(m)); redo(); } }, l))));
-  root.append(h('p', { class: 'muted' }, `Sin escuchar desde hace ${MONTHS.find(x => x[0] === months)[1]}. «No» oculta un artista.`));
-
   const plist = selectedTracks();
   const list = R.forgotten(st.effStats, { kind, silent: months, excluded, plist, now: new Date(), minWeight: kind === 'tracks' ? 5 : 12 });
-  root.append(playlistCard(ctx, redo));
 
   if (!st.effStats && !plist.length) {
     root.append(h('div', { class: 'empty' }, h('p', null, 'Esto necesita tu historial de Spotify o una playlist.'),
-      h('p', { class: 'muted' }, 'Importa tu historial en Ajustes o elige una playlist.')));
+      h('p', { class: 'muted' }, 'Importa tu historial en Ajustes o elige una playlist.')), playlistCard(ctx, redo));
     return root;
   }
+
+  // texto y botón de crear playlist arriba: se ven sin bajar por la lista
+  root.append(h('p', { class: 'muted' }, `Sin escuchar desde hace ${MONTHS.find(x => x[0] === months)[1]}. «No» oculta un artista.`));
+  if (list.length) root.append(h('button', { class: 'btn wide', type: 'button', onclick: () => createPlaylistFlow(ctx, st.effStats, list, kind, plist) }, '▶ Crear playlist con esto'));
 
   if (!list.length) root.append(h('div', { class: 'empty' }, 'No hay nada que cumpla eso. Prueba con menos meses.'));
   else {
@@ -57,9 +58,8 @@ export function rediscoverView(ctx) {
           r.inPlaylist ? h('span', { class: 'chip ok' }, 'en playlist') : null)),
       h('button', { class: 'btn sec sm', type: 'button', 'aria-label': `No me interesa ${r.artist}`, title: kind === 'artists' ? 'No me interesa este artista' : 'No me interesa este artista (se ocultan también sus canciones)',
         onclick: () => { writeExcluded([...excluded, r.artist]); ctx.toast(`Ocultado: ${r.artist}`); redo(); } }, 'No'))))));
-    // barra fija abajo: el botón se ve siempre, sin tener que llegar al final de la lista
-    root.append(h('div', { class: 'fabbar' }, h('button', { class: 'btn', onclick: () => createPlaylistFlow(ctx, st.effStats, list, kind, plist) }, '▶ Crear playlist con esto')));
   }
+  root.append(playlistCard(ctx, redo));
 
   if (excluded.length) {
     root.append(h('details', { class: 'dt' }, h('summary', null, `Artistas excluidos (${excluded.length})`),

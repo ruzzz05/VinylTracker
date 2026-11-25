@@ -9,7 +9,7 @@
   --accent: #fff; --on-accent: #111;
   --glass: #ffffff14; --glass-strong: #ffffff1f; --glass-line: #ffffff26; --shadow: #0008;
   --glow: color-mix(in srgb, var(--tint) 58%, #0c0c14);
-  --tabs-h: 78px;
+  --tabs-h: 72px;
   --viz: #fff; --viz-soft: #ffffff66; --viz-line: #ffffff14; --viz-ink2: #c6c8de;
   color-scheme: dark;
 }
@@ -54,16 +54,14 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .top h1 { margin: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 8px; letter-spacing: -.02em; }
 .top h1 img { border-radius: 7px; }
 .status { font-size: .75rem; color: var(--muted); text-align: right; }
-main { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; padding: 8px 16px calc(var(--tabs-h) + env(safe-area-inset-bottom) + 18px); outline: none; }
+main { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; padding: 8px 16px 20px; outline: none; }
 main > * { max-width: 760px; margin-left: auto; margin-right: auto; }
 h2 { font-size: 1.05rem; margin: 18px 0 8px; }
 p { margin: 8px 0; }
 .muted { color: var(--muted); font-size: .88rem; }
 a { color: var(--acc1); }
 
-.tabs { position: absolute; left: 0; right: 0; bottom: 0; z-index: 20; height: calc(var(--tabs-h) + env(safe-area-inset-bottom)); padding: 0 14px calc(10px + env(safe-area-inset-bottom)); display: flex; align-items: flex-end; pointer-events: none; }
-.tabs::before { content: ''; position: absolute; inset: -18px 0 0; background: linear-gradient(transparent, var(--bg) 70%); pointer-events: none; }
-.tabs .dock { pointer-events: auto; position: relative; }
+.tabs { flex: none; position: relative; z-index: 20; height: calc(var(--tabs-h) + env(safe-area-inset-bottom)); padding: 0 14px calc(10px + env(safe-area-inset-bottom)); display: flex; align-items: flex-end; }
 .dock {
   display: flex; align-items: center; justify-content: space-between; gap: 2px; width: 100%; max-width: 520px; margin: 0 auto; padding: 7px;
   border-radius: 99px; background: var(--glass-strong); backdrop-filter: blur(20px) saturate(1.4); -webkit-backdrop-filter: blur(20px) saturate(1.4);
@@ -346,8 +344,7 @@ details.dt th, details.dt td { text-align: left; padding: 3px 4px; border-bottom
 .card.st .row.static { background: transparent; padding: 4px 0; }
 
 /* ---------- Olvidados: botón de crear playlist siempre a mano ---------- */
-.fabbar { position: sticky; bottom: calc(var(--tabs-h) + env(safe-area-inset-bottom) + 4px); z-index: 5; margin-top: 14px; }
-.fabbar .btn { width: 100%; padding: 14px 16px; box-shadow: 0 10px 28px #0006; }
+.btn.wide { width: 100%; padding: 14px 16px; margin: 2px 0 12px; }
 
 /* ================= Tinta: cristal, botones claros y detalles ================= */
 .seg { background: var(--glass); border: 1px solid var(--glass-line); border-radius: 99px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
@@ -375,7 +372,6 @@ input, select, textarea { background: var(--surface2); border-color: var(--line)
 .cc-bar.hl, .cc-col:focus-visible .cc-bar, .cc-col:hover .cc-bar { background: var(--viz); }
 .hb-b { background: var(--viz); }
 .cdate { background: var(--glass-strong); }
-.fabbar .btn { background: var(--accent); color: var(--on-accent); }
 :focus-visible { outline: 2px solid var(--acc2); outline-offset: 2px; }
 button:focus-visible, a:focus-visible { outline: 2px solid var(--acc2); outline-offset: 2px; }
 .dock button:focus-visible { outline-offset: -2px; }
