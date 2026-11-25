@@ -69,13 +69,12 @@ export function wishView(ctx) {
     h('button', { class: 'btn sec', onclick: () => scanSheet(ctx) }, 'Escanear código')));
   root.append(notifyCard(ctx));
   if (!list.length) {
-    root.append(h('div', { class: 'empty' }, h('p', null, 'Aquí van los vinilos que quieres, sean un álbum cualquiera o una edición concreta.'),
-      h('p', { class: 'muted' }, 'Te aviso cuando aparezcan en stock o en preventa en las tiendas, .')));
+    root.append(h('div', { class: 'empty' }, h('p', null, 'Aquí van los vinilos que quieres.'),));
     return root;
   }
   const n = list.filter(w => live(w) > 0).length;
   root.append(h('p', { class: 'muted' }, n ? `${n} disponible${n === 1 ? '' : 's'} ahora. ` : '',
-    'Se comprueba al abrir la app y cada 30 min mientras está abierta (las tiendas se actualizan cada día).'));
+    'Te aviso cuando haya stock.'));
   root.append(h('ul', { class: 'list' }, list.map(w => wishRow(ctx, w))));
   return root;
 }
@@ -83,7 +82,7 @@ export function wishView(ctx) {
 export function boughtView(ctx) {
   const list = ctx.state.wish.filter(w => w.status === 'bought').sort((a, b) => b.boughtAt - a.boughtAt);
   if (!list.length) return h('div', { class: 'empty' }, h('p', null, 'Todavía no has marcado ningún vinilo como comprado.'),
-    h('p', { class: 'muted' }, 'Sirve para apuntar lo que ya has comprado sin añadirlo a la colección: deja de salir en las sugerencias.'));
+    h('p', { class: 'muted' }, 'Lo que compres sale de las sugerencias.'));
   return h('div', null, h('p', { class: 'muted' }, `${list.length} comprado${list.length === 1 ? '' : 's'}, aún fuera de la colección.`), h('ul', { class: 'list' }, list.map(w => wishRow(ctx, w))));
 }
 
@@ -94,7 +93,7 @@ function notifyCard(ctx) {
       ? h('p', { class: 'muted' }, 'Avisos del sistema bloqueados: se avisa dentro de la app.') : null;
   }
   return h('div', { class: 'card' }, h('h3', null, 'Avisos'),
-    h('p', { class: 'muted' }, 'Los avisos salen dentro de la app. Si quieres que también suenen como notificación, actívalos.'),
+    h('p', { class: 'muted' }, 'Recibe los avisos como notificación.'),
     h('button', { class: 'btn sec', onclick: async () => { try { await Notification.requestPermission(); } catch (e) { /* ignorado */ } ctx.render(); } }, 'Activar notificaciones'));
 }
 
@@ -175,7 +174,7 @@ export function addSheet(ctx) {
     status.textContent = 'Buscando en Discogs…'; out.replaceChildren();
     try {
       const res = W.sortResults(await discogs.searchReleases(text)).slice(0, 12);
-      status.textContent = res.length ? 'Elige una edición concreta o «Cualquier edición» si te vale cualquiera.' : 'Discogs no encontró nada. Prueba con menos palabras o añádelo a mano abajo.';
+      status.textContent = res.length ? 'Elige una edición.' : 'Sin resultados. Prueba con menos palabras.';
       out.replaceChildren(...res.map(r => resultCard(ctx, r)));
     } catch (e) { status.textContent = e.message; status.className = 'muted bad'; }
   };
@@ -226,7 +225,7 @@ export function scanSheet(ctx, { onPick = null } = {}) {
     catch (e) {
       frame.hidden = true; handle = null;
       status.className = 'muted bad';
-      status.textContent = e.name === 'NotAllowedError' ? 'No hay permiso para la cámara. Actívalo en Ajustes del iPhone → Safari/VinylTracker, o escribe el código.' : (e.message || 'No se pudo abrir la cámara.');
+      status.textContent = e.name === 'NotAllowedError' ? 'Sin permiso para la cámara. Escribe el código.' : (e.message || 'No se pudo abrir la cámara.');
     }
   }
 

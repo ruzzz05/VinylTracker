@@ -35,7 +35,7 @@ export function openAdd(ctx, { prefill = null, editing = null } = {}) {
 
   const owner = () => fb.isOwner();
   const toMiApp = () => !editing && owner() && !!C.parseSpotifyAlbum(link.value) && /^https:\/\/\S+$/.test(image.value.trim());
-  const paintDest = () => { dest.textContent = editing ? 'Se actualizará en este dispositivo.' : toMiApp() ? 'Se guardará en tu colección de mi-app (nube).' : 'Se guardará en este dispositivo y en tu copia de la nube de VinylTracker. Para que salga también en mi-app hace falta enlace de Spotify y portada https.'; };
+  const paintDest = () => { dest.textContent = editing ? 'Se actualizará en este dispositivo.' : toMiApp() ? 'Se guardará en tu colección de mi-app (nube).' : 'Se guardará en este dispositivo (y en tu copia de la nube). Para mi-app: enlace de Spotify y portada https.'; };
   const paintPreview = () => {
     const u = image.value.trim();
     if (!/^https:\/\/\S+$/.test(u)) { preview.hidden = true; return; }
@@ -71,7 +71,7 @@ export function openAdd(ctx, { prefill = null, editing = null } = {}) {
       if (!link.value.includes(sp.id)) return;          // el enlace cambió mientras buscaba
       if (info) {
         apply(info, { force: true });
-        say(`Datos de Spotify: ${[info.year, info.label, info.tracks ? info.tracks + ' canciones' : ''].filter(Boolean).join(' · ')}. Revisa y guarda.`);
+        say(`Datos de Spotify: ${[info.year, info.label, info.tracks ? info.tracks + ' canciones' : ''].filter(Boolean).join(' · ')}.`);
         return;
       }
       const res = await fetch('https://open.spotify.com/oembed?url=' + encodeURIComponent(sp.url));
@@ -79,7 +79,7 @@ export function openAdd(ctx, { prefill = null, editing = null } = {}) {
       const o = await res.json();
       if (!link.value.includes(sp.id)) return;
       apply({ name: o.title || '', image: o.thumbnail_url || '' }, { force: true });
-      say('Elige o escribe el artista y los estilos, y guarda. (Conecta Spotify en Ajustes para que coja también año, sello y estilos.)');
+      say('Rellena artista y estilos. Conecta Spotify para más datos.');
       itunes(o.title);
     } catch (e) { say('No se pudo leer el álbum de Spotify: ' + e.message, true); }
   });
@@ -101,7 +101,7 @@ export function openAdd(ctx, { prefill = null, editing = null } = {}) {
     if (!name.value.trim() || !artist.value.trim()) return say('Escribe el nombre y el artista para buscar la portada.', true);
     say('Buscando la portada…');
     const u = await covers.albumImage({ artist: artist.value.trim(), name: name.value.trim() }, {}).catch(() => '');
-    if (u) { image.value = u; paintPreview(); paintDest(); say('Portada encontrada.'); } else say('No encontré la portada: pega una dirección https o déjala vacía.', true);
+    if (u) { image.value = u; paintPreview(); paintDest(); say('Portada encontrada.'); } else say('Portada no encontrada.', true);
   };
 
   image.addEventListener('input', () => { paintPreview(); paintDest(); });

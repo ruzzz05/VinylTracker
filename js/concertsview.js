@@ -51,7 +51,7 @@ export function concertsView({ state, onSettings }) {
   const names = K.artistNames({ stats: state.effStats, apiAlbums: state.apiAlbums, months, limit: LIMIT, topArtists: S.topArtists });
   if (!names.length) {
     root.append(h('div', { class: 'empty' }, h('p', null, 'Necesito saber qué escuchas.'),
-      h('p', { class: 'muted' }, 'Conecta Spotify o importa tu historial en Ajustes y aquí saldrán los próximos conciertos de tus artistas más escuchados.'),
+      h('p', { class: 'muted' }, 'Conecta Spotify o importa tu historial en Ajustes.'),
       h('div', { class: 'btns', style: 'justify-content:center' }, h('button', { class: 'btn', onclick: onSettings }, 'Ir a Ajustes'))));
     return root;
   }
@@ -62,7 +62,7 @@ export function concertsView({ state, onSettings }) {
     if (!L) {
       info.textContent = '';
       list.replaceChildren(h('div', { class: 'card' }, h('h3', null, 'Todavía no hay datos de conciertos'),
-        h('p', { class: 'muted' }, 'Los conciertos los descarga cada día GitHub y se publican junto a la app. Aún no hay ningún fichero: falta guardar la clave de Ticketmaster como secreto del repositorio (TICKETMASTER_KEY) y esperar al siguiente despliegue.'),
+        h('p', { class: 'muted' }, 'Falta la clave de Ticketmaster en el repositorio (secreto TICKETMASTER_KEY).'),
         h('button', { class: 'btn sec', onclick: () => { resetConcerts(); rerender(); } }, 'Volver a mirar')));
       return;
     }
@@ -77,17 +77,17 @@ export function concertsView({ state, onSettings }) {
     const paint = () => {
       const cc = sel.value, evs = K.filterCountry(all, cc).filter(e => e.date >= today);
       const where = cc ? ' en ' + (K.COUNTRY_NAMES[cc] || cc) : '';
-      info.textContent = evs.length ? `${evs.length} concierto${evs.length === 1 ? '' : 's'} de tus ${names.length} artistas más escuchados${where}.` : '';
+      info.textContent = evs.length ? `${evs.length} concierto${evs.length === 1 ? '' : 's'}${where}.` : '';
       list.replaceChildren(...K.groupByMonth(evs).map(([k, items]) => h('section', null, h('h2', { class: 'month' }, K.monthLabel(k)), h('ul', { class: 'list' }, items.map(eventRow)))));
       if (!evs.length) list.append(h('div', { class: 'empty' }, h('p', null, `Ninguno de tus artistas tiene conciertos anunciados${where}.`),
-        h('p', { class: 'muted' }, cc ? 'Prueba con «Todos los países»: a veces la gira pasa por Lisboa o París.' : 'Ticketmaster solo cubre sus propios eventos.')));
+        h('p', { class: 'muted' }, cc ? 'Prueba con «Todos los países».' : 'Ticketmaster solo cubre sus propios eventos.')));
       const without = per.filter(p => !K.filterCountry(p.ev, cc).some(e => e.date >= today)).map(p => p.n);
       none.replaceChildren(...(without.length ? [h('summary', null, `Sin fechas anunciadas (${without.length})`), h('p', { class: 'muted' }, without.join(', '))] : []));
     };
     sel.addEventListener('change', () => { prefs.set('conc.country', sel.value); paint(); });
     paint();
     const gen = L.data.generated ? new Date(L.data.generated).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) : '';
-    none.after(h('p', { class: 'muted' }, `Datos de Ticketmaster${gen ? ' del ' + gen : ''} (se actualizan cada día).`));
+    none.after(h('p', { class: 'muted' }, `Ticketmaster${gen ? ', ' + gen : ''}.`));
   });
   return root;
 }

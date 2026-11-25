@@ -35,7 +35,7 @@ export function artistsView({ stats, apiAlbums, months, now = new Date(), onImpo
   for (const a of Object.values(apiAlbums || {})) { const o = byArtist[a.artist] || (byArtist[a.artist] = { name: a.artist, points: 0, albums: 0 }); o.points += a.points || 0; o.albums++; }
   const list = Object.values(byArtist).filter(a => a.points > 0).sort((x, y) => y.points - x.points).slice(0, 50);
   if (!list.length) return needImport(onImport);
-  return h('div', null, note('Aproximado, con tus tops de Spotify. Importa tu historial para tiempos reales.'),
+  return h('div', null, note('Aproximado. Importa tu historial para tiempos reales.'),
     h('ul', { class: 'list' }, list.map((a, i) => h('li', null, h('div', { class: 'row static' },
       h('div', { class: 'n' }, i + 1), artistAvatar(a.name),
       h('div', { class: 't' }, h('b', null, a.name), h('span', null, `${a.albums} álbum${a.albums === 1 ? '' : 'es'} en tus tops`)),
@@ -56,7 +56,7 @@ export function tracksView({ stats, months, now = new Date(), onImport, cover })
 function needImport(onImport) {
   return h('div', { class: 'empty' },
     h('p', null, 'Esto necesita tu historial de Spotify.'),
-    h('p', { class: 'muted' }, 'Importa el export de Spotify en Ajustes (sirve el paquete básico "Datos de la cuenta", que llega antes, o el ampliado). Si ya lo habías importado antes de esta versión, vuelve a importarlo para calcular estas estadísticas.'),
+    h('p', { class: 'muted' }, 'Importa tu historial de Spotify en Ajustes.'),
     h('div', { class: 'btns', style: 'justify-content:center' }, h('button', { class: 'btn', onclick: onImport }, 'Ir a Ajustes')));
 }
 
@@ -131,14 +131,14 @@ function collectionCard(collection) {
 function statsLite({ collection, ranking, onImport }) {
   const root = h('div', { class: 'stats' });
   root.append(card('Estadísticas de escucha',
-    h('p', null, 'Para ver minutos por día, mes y año, tus horas punta, rachas y récords necesito tu historial de Spotify.'),
-    h('p', { class: 'muted' }, 'Pídelo en spotify.com/account/privacy: "Datos de la cuenta" llega antes (último año) y "Historial de reproducciones ampliado" trae todo y los álbumes. Impórtalo en Ajustes; se procesa en tu móvil.'),
+    h('p', null, 'Necesito tu historial de Spotify.'),
+    h('p', { class: 'muted' }, 'Impórtalo en Ajustes: «Datos de la cuenta» (rápido) o «Historial ampliado».'),
     h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: onImport }, 'Ir a Ajustes'))));
   const top = (ranking || []).slice(0, 40);
   if (top.length) {
     const owned = top.filter(r => r.owned).length;
     root.append(card('Tus tops y tu vinilo', h('div', { class: 'big sm' }, `${owned} de ${top.length}`),
-      note('de tus álbumes más escuchados (según la API de Spotify) ya los tienes en vinilo.'),
+      note('de tus álbumes top ya los tienes en vinilo.'),
       segBar([{ label: 'En vinilo', value: owned, cls: 'a' }, { label: 'Te faltan', value: top.length - owned, cls: 'b' }])));
   }
   root.append(collectionCard(collection));

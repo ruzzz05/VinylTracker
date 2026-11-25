@@ -32,7 +32,7 @@ export function rediscoverView(ctx) {
     h('button', { 'aria-pressed': String(kind === k), onclick: () => { prefs.set('rd.kind', k); redo(); } }, l))));
   root.append(h('div', { class: 'seg', role: 'group', 'aria-label': 'Sin escuchar desde hace' }, MONTHS.map(([m, l]) =>
     h('button', { 'aria-pressed': String(months === m), onclick: () => { prefs.set('rd.months', String(m)); redo(); } }, l))));
-  root.append(h('p', { class: 'muted' }, `Lo que más escuchaste y lleva al menos ${MONTHS.find(x => x[0] === months)[1]} sin sonar. Pulsa «No» en lo que no quieras volver a ver.`));
+  root.append(h('p', { class: 'muted' }, `Sin escuchar desde hace ${MONTHS.find(x => x[0] === months)[1]}. «No» oculta un artista.`));
 
   const plist = selectedTracks();
   const list = R.forgotten(st.effStats, { kind, silent: months, excluded, plist, now: new Date(), minWeight: kind === 'tracks' ? 5 : 12 });
@@ -40,7 +40,7 @@ export function rediscoverView(ctx) {
 
   if (!st.effStats && !plist.length) {
     root.append(h('div', { class: 'empty' }, h('p', null, 'Esto necesita tu historial de Spotify o una playlist.'),
-      h('p', { class: 'muted' }, 'Importa el export en Ajustes, o elige abajo una playlist tuya (por ejemplo la que tiene casi todo lo que has escuchado, en orden).')));
+      h('p', { class: 'muted' }, 'Importa tu historial en Ajustes o elige una playlist.')));
     return root;
   }
 
@@ -73,7 +73,7 @@ export function rediscoverView(ctx) {
 function playlistCard(ctx, redo) {
   const ids = Object.keys(plists);
   return h('div', { class: 'card' }, h('h3', null, 'Playlists como fuente'),
-    h('p', { class: 'muted' }, 'Las canciones de tus playlists también cuentan, y la fecha en que las añadiste hace de «última vez que las escuché». Sirve, por ejemplo, para una playlist con casi todo lo que has escuchado, en orden.'),
+    h('p', { class: 'muted' }, 'Sus canciones cuentan y la fecha en que las añadiste es la «última vez».'),
     ids.length ? h('div', { class: 'chips' }, ids.map(id => h('span', { class: 'chip ok' }, `${plists[id].name} · ${plists[id].tracks.length}`))) : null,
     !spotify.isConnected() ? h('p', { class: 'muted' }, 'Conecta Spotify en Ajustes para elegir playlists.')
       : h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: () => pickPlaylists(ctx, redo) }, ids.length ? 'Cambiar playlists' : 'Elegir playlists'),

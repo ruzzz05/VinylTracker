@@ -22,7 +22,7 @@ import { concertsView } from './concertsview.js';
 import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 
-const VERSION = '1.12.0';
+const VERSION = '1.12.1';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -205,7 +205,7 @@ function vRanking() {
   if (!hasHistory && !hasApi && !state.effStats) {
     root.append(h('div', { class: 'empty' },
       h('p', null, 'Todavía no hay datos de escucha.'),
-      h('p', { class: 'muted' }, 'Conecta Spotify o importa tu historial (export de datos) en Ajustes.'),
+      h('p', { class: 'muted' }, 'Conecta Spotify o importa tu historial en Ajustes.'),
       h('div', { class: 'btns', style: 'justify-content:center' }, h('button', { class: 'btn', onclick: () => go('ajustes') }, 'Ir a Ajustes'))));
     return root;
   }
@@ -220,10 +220,10 @@ function vRanking() {
     cover: t => trackCover(t, known()) })); return root; }
   if (!hasHistory && !hasApi) {
     root.append(h('div', { class: 'empty' }, h('p', null, 'Tu export no trae nombres de álbum.'),
-      h('p', { class: 'muted' }, 'Es el paquete básico ("Datos de la cuenta"). Mira Artistas, Canciones y la pestaña Estadísticas. Para ver álbumes, conecta Spotify o importa el "Historial de reproducciones ampliado".')));
+      h('p', { class: 'muted' }, 'Paquete básico: no trae álbumes. Conecta Spotify o importa el historial ampliado.')));
     return root;
   }
-  if (!hasHistory) root.append(h('p', { class: 'muted' }, 'Ranking aproximado con tus tops de Spotify. Para minutos reales importa el export de tu historial en Ajustes.'));
+  if (!hasHistory) root.append(h('p', { class: 'muted' }, 'Ranking aproximado. Importa tu historial en Ajustes para minutos reales.'));
   const list = rankingList().slice(0, 60);
   const sources = [hasHistory && 'historial', hasApi && 'API de Spotify'].filter(Boolean).join(' + ');
   root.append(h('div', { class: 'chips' }, h('span', { class: 'chip' }, 'Fuente: ' + sources),
@@ -255,7 +255,7 @@ function liveBar() {
   }
   const dot = h('button', { class: 'sync-dot', id: 'live-dot', type: 'button', onclick: () => {
     const st = liveStatus();
-    toast(`${st.label}. ${st.detail}` + (state.live.gap ? ' Posible hueco: escuchaste más de 50 canciones desde la última vez.' : ''), st.state === 'error');
+    toast(`${st.label}. ${st.detail}` + (state.live.gap ? ' Puede faltar alguna canción.' : ''), st.state === 'error');
   } });
   const btn = h('button', { class: 'iconbtn sm', id: 'live-refresh', type: 'button', 'aria-label': 'Actualizar ahora', title: 'Actualizar ahora',
     onclick: () => { liveRefresh(); nowRefresh(); } }, icon(SYNC_ICON));
@@ -383,7 +383,7 @@ function vCollection() {
 // Discos guardados en la nube que esta app no puede mostrar (no se borran: solo se explica el motivo)
 function showBadExtras() {
   showPanel(h('h2', null, 'Discos que no se pueden mostrar'),
-    h('p', { class: 'muted' }, 'Están guardados en tu nube y no se han borrado. La app solo muestra los que tienen un formato válido.'),
+    h('p', { class: 'muted' }, 'Siguen en tu nube, pero con un formato no válido.'),
     h('div', { class: 'card' }, state.extrasBad.map(b => h('div', { class: 'stat col' }, h('b', null, [b.name || '(sin nombre)', b.artist].filter(Boolean).join(' · ')), h('span', { class: 'muted' }, b.why)))),
     h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: closeSheet }, 'Cerrar')));
 }
@@ -470,16 +470,16 @@ function vBuy() {
   if (state.filter === 'precio') fetchPrices(all);          // al elegir «Con precio» se consulta Discogs (de uno en uno, con caché de 12 h)
 
   if (!all.length) {
-    root.append(h('div', { class: 'empty' }, 'Cuando haya ranking, aquí verás lo que escuchas y todavía no tienes en vinilo.'));
+    root.append(h('div', { class: 'empty' }, 'Aquí saldrá lo que escuchas y no tienes en vinilo.'));
     return root;
   }
-  root.append(h('p', { class: 'muted' }, 'Lo que escuchas (artistas con más de 1 reproducción) y aún no tienes en vinilo (sin lo que ya marcaste como comprado). Toca un disco para ver dónde comprarlo o apuntarlo.'));
+  root.append(h('p', { class: 'muted' }, 'Lo que escuchas y no tienes en vinilo. Toca un disco para ver dónde comprarlo.'));
   root.append(h('div', { class: 'chips' }, [['todos', 'Todos'], ['precio', 'Con precio'], ['stock', 'En stock'], ['preventa', 'Preventa']]
     .map(([k, label]) => h('button', { class: 'chip', 'aria-pressed': String(state.filter === k), onclick: () => { state.priceRun++; state.priceProgress.running = false; state.filter = k; render(); } }, label))));
   if (state.filter === 'precio') {
     const pp = state.priceProgress;
     root.append(h('p', { class: 'muted' + (pp.error ? ' bad' : ''), role: 'status', id: 'price-progress' },
-      pp.error ? pp.error : pp.running ? `Consultando precios en Discogs… ${pp.done}/${pp.total}` : discogs.hasToken() ? 'Precios de tienda y de Discogs (copia más barata).' : 'Precios de tienda. Para ver también los de Discogs añade tu token en Ajustes → Discogs.'));
+      pp.error ? pp.error : pp.running ? `Consultando precios en Discogs… ${pp.done}/${pp.total}` : discogs.hasToken() ? 'Tienda y Discogs (copia más barata).' : 'Solo precios de tienda. Para los de Discogs, añade tu token en Ajustes.'));
   }
   root.append(list.length ? h('ul', { class: 'list' }, list.map((r, i) => albumRow({ ...r, wished: wanted.has(r.key) }, i))) : h('div', { class: 'empty' }, state.filter === 'precio' && state.priceProgress.running ? 'Buscando precios…' : 'Nada con este filtro.'));
   return root;
@@ -679,9 +679,9 @@ async function openSheet(r) {
 function cloudCard() {
   return h('div', { class: 'card', id: 'cloud-card' }, h('h3', null, 'Copia en la nube'),
     cloud.available()
-      ? [h('p', { class: 'muted' }, 'Tu lista de deseos y comprados, el registro en vivo, el historial importado y los ajustes se guardan en tu Firebase de mi-app. Así sobreviven a borrar la app: al iniciar sesión se recuperan solos. Los tokens y claves (Spotify, Discogs, Ticketmaster) NO se suben.'),
+      ? [h('p', { class: 'muted' }, 'Deseos, comprados, historial, registro en vivo y ajustes. Los tokens no se suben.'),
         state.cloudError ? h('p', { class: 'muted bad' }, state.cloudError) : h('p', { class: 'own' }, state.cloudBusy ? 'Sincronizando…' : state.cloudAt ? '✓ Sincronizado ' + when(state.cloudAt) : 'Pendiente de sincronizar'),
-        state.cloudError && /403/.test(state.cloudError) ? h('p', { class: 'muted' }, 'Falta una regla en Firestore (consola de Firebase → Firestore → Reglas): permite leer y escribir en /vinilos/{doc} a tu UID de dueño, como ya haces con vinilos/coleccion.') : null,
+        state.cloudError && /403/.test(state.cloudError) ? h('p', { class: 'muted' }, 'Falta una regla en Firestore: permite leer y escribir en /vinilos/{doc} a tu cuenta de dueño.') : null,
         h('div', { class: 'btns' }, h('button', { class: 'btn sec', disabled: state.cloudBusy, onclick: () => cloudPull() }, 'Sincronizar ahora'))]
       : h('p', { class: 'muted' }, 'Solo la cuenta del dueño puede guardar la copia en la nube.'));
 }
@@ -696,7 +696,7 @@ function vSettings() {
   const u = h('input', { type: 'text', autocomplete: 'username', autocapitalize: 'none', placeholder: 'usuario', value: fb.user() || '' });
   const p = h('input', { type: 'password', autocomplete: 'current-password', placeholder: 'contraseña' });
   root.append(h('div', { class: 'card' }, h('h3', null, 'Cuenta de mi-app'),
-    h('p', { class: 'muted' }, 'La misma cuenta de tu app Vinilos. Sirve para leer los discos que añades desde allí. La contraseña no se guarda.'),
+    h('p', { class: 'muted' }, 'La cuenta de tu app Vinilos. La contraseña no se guarda.'),
     fb.isLoggedIn()
       ? [h('p', null, 'Sesión iniciada como ', h('b', null, fb.user()), fb.isOwner() ? ' (dueño: puedes añadir discos)' : ''),
         h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: syncExtras }, 'Sincronizar ahora'),
@@ -717,7 +717,7 @@ function vSettings() {
     spotify.isConnected() ? h('p', { class: 'own' }, '✓ Conectado · última carga: ' + when(state.apiAt)) : h('p', { class: 'muted' }, 'Sin conectar.'),
     spotify.isConnected() ? h('p', { class: 'muted' }, `En vivo: ${state.live.entries.length} reproducciones guardadas` +
       (state.live.entries.length ? ` desde ${when(Date.parse(state.live.entries[0].ts))}` : '') +
-      '. Se actualiza sola cada minuto mientras la app está abierta. Spotify solo recuerda tus últimas 50 canciones: abre la app de vez en cuando para no perder ninguna.') : null,
+      '. Se actualiza sola con la app abierta.') : null,
     field('Client ID (app de developer.spotify.com)', cid),
     h('p', { class: 'muted' }, 'Redirect URI que debes tener añadida en tu app de Spotify:'),
     h('code', { style: 'word-break:break-all;font-size:.8rem;user-select:text;-webkit-user-select:text' }, spotify.redirectUri()),
@@ -735,7 +735,7 @@ function vSettings() {
         state.live = L.emptyLive(); await store.set('live', state.live); recompute(); render();
       } }, 'Borrar registro en vivo') : null),
     h('details', null, h('summary', { class: 'muted' }, 'Si Spotify se queda en bucle y no me deja aceptar'),
-      h('p', { class: 'muted' }, 'En la app instalada, el login de Spotify a veces no guarda la sesión. Hazlo en Safari: 1) pulsa el botón y copia el enlace; 2) abre Safari (no la app), pega el enlace y entra con tu cuenta; 3) acepta; 4) copia la dirección a la que te lleve y pégala abajo, en "Si al volver…".'),
+      h('p', { class: 'muted' }, 'Pulsa el botón, copia el enlace, ábrelo en Safari y acepta. Luego pega aquí abajo la dirección a la que te lleve.'),
       (() => {
         const box = h('textarea', { readonly: true, rows: '5', hidden: true, style: 'width:100%;font-size:12px;user-select:text;-webkit-user-select:text' });
         const copy = h('button', { class: 'btn sec', hidden: true, onclick: async () => {
@@ -749,7 +749,7 @@ function vSettings() {
         return h('div', null, h('div', { class: 'btns' }, make, copy), box);
       })()),
     h('details', null, h('summary', { class: 'muted' }, 'Si al volver de Spotify no entra solo'),
-      h('p', { class: 'muted' }, 'Copia la URL completa de la barra de direcciones tras aceptar y pégala aquí.'),
+      h('p', { class: 'muted' }, 'Pega la dirección completa tras aceptar.'),
       paste, h('button', { class: 'btn sec', onclick: async () => {
         try { await spotify.finishLogin(paste.value); toast('Spotify conectado'); await refreshApi(); } catch (e) { toast(e.message, true); }
       } }, 'Completar conexión'))));
@@ -758,7 +758,7 @@ function vSettings() {
   const file = h('input', { type: 'file', accept: '.zip,.json,application/zip,application/json', multiple: true });
   const info = state.historyInfo;
   root.append(h('div', { class: 'card' }, h('h3', null, 'Historial de Spotify (minutos reales)'),
-    h('p', { class: 'muted' }, 'spotify.com/account/privacy → "Historial de reproducciones ampliado". Importa el .zip tal cual (o todos los .json a la vez; una nueva importación sustituye a la anterior). Sirven los dos paquetes: el ampliado (con álbumes, tarda más) y el básico "Datos de la cuenta" (último año, sin álbumes, llega antes). Se procesa en tu móvil, no se sube a ningún sitio.'),
+    h('p', { class: 'muted' }, 'Pídelo en spotify.com/account/privacy: «Historial ampliado» (con álbumes) o «Datos de la cuenta» (más rápido, sin álbumes). Importa el .zip tal cual; se procesa en tu móvil.'),
     info ? h('p', null, `${info.basic ? 'paquete básico (sin álbumes)' : info.albums + ' álbumes'} · ${info.plays} reproducciones · ${info.from} → ${info.to}`) : null,
     file, h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => importHistory(file.files) }, 'Importar'),
       info ? h('button', { class: 'btn danger', onclick: async () => { await store.del('history'); await store.del('historyInfo'); await store.del('stats'); state.history = {}; state.historyInfo = null; state.stats = null; recompute(); render(); } }, 'Borrar historial') : null)));
@@ -767,7 +767,7 @@ function vSettings() {
   const du = h('input', { type: 'text', value: prefs.get('discogs.user'), autocapitalize: 'none', placeholder: 'usuario de Discogs' });
   const dt = h('input', { type: 'password', value: prefs.get('discogs.token'), autocomplete: 'off', placeholder: 'token personal' });
   root.append(h('div', { class: 'card' }, h('h3', null, 'Discogs'),
-    h('p', { class: 'muted' }, 'discogs.com/settings/developers → Generate new token. Con token las consultas son más rápidas. Se guarda solo en este dispositivo.'),
+    h('p', { class: 'muted' }, 'Token en discogs.com/settings/developers. Solo se guarda en este dispositivo.'),
     field('Usuario', du), field('Token', dt),
     h('button', { class: 'btn', onclick: () => { prefs.set('discogs.user', du.value.trim()); prefs.set('discogs.token', dt.value.trim()); toast('Guardado'); } }, 'Guardar')));
 
@@ -779,7 +779,7 @@ function vSettings() {
 
   // Datos
   root.append(h('div', { class: 'card' }, h('h3', null, 'Datos'),
-    h('p', { class: 'muted' }, `VinylTracker ${VERSION}. Todo se guarda en este dispositivo. Tiendas: ${storeNames()} (actualizadas a diario); Fnac y El Corte Inglés no permiten consultas automáticas (se ofrece su búsqueda).`),
+    h('p', { class: 'muted' }, `VinylTracker ${VERSION}. Los datos se guardan en este dispositivo. Tiendas: ${storeNames()}.`),
     h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: checkUpdate }, 'Buscar actualización')),
     h('button', { class: 'btn danger', onclick: async () => {
       if (!confirm('¿Borrar todos los datos de VinylTracker de este dispositivo?')) return;
