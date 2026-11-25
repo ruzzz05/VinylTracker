@@ -22,7 +22,7 @@ import { concertsView } from './concertsview.js';
 import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 
-const VERSION = '1.11.0';
+const VERSION = '1.12.0';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -74,7 +74,7 @@ const state = {
   history: {}, apiAlbums: {}, apiAt: 0, historyInfo: null,
   base: [], extras: [], extrasBad: [], extrasAt: 0, owned: null, collection: [],
   storeIndex: [], storeDate: '',
-  stats: null, rankView: prefs.get('rankView', 'albums') === 'stats' ? 'albums' : prefs.get('rankView', 'albums'), statsPage: prefs.get('statsPage', 'resumen'),
+  stats: null, rankView: prefs.get('rankView', 'albums') === 'stats' ? 'albums' : prefs.get('rankView', 'albums'),
   live: L.emptyLive(), liveStats: null, liveHistory: {}, effStats: null, effHistory: {},
   now: undefined, nowError: '', liveBusy: false, liveError: '',
   csvAt: 0, syncing: false, syncError: '',
@@ -145,19 +145,17 @@ function render() {
   setStatus('');
 }
 
-// ---------- Estadísticas (pestaña propia: mosaico + páginas) ----------
+// ---------- Estadísticas (una sola página: periodo, tiempo, una gráfica y tus tops) ----------
 function vStats() {
   return statsPage({
-    stats: state.effStats, history: state.effHistory, collection: state.collection, ranking: rankingList().slice(0, 40),
-    months: state.months, page: state.statsPage, now: new Date(),
-    onPage: (p, m) => {
-      state.statsPage = p; prefs.set('statsPage', p);
-      if (m !== undefined) { state.months = m; prefs.set('months', String(m)); }
-      render(); view.scrollTop = 0;
-    },
+    stats: state.effStats, history: state.effHistory, collection: state.collection, ranking: rankingList(),
+    months: state.months, now: new Date(),
+    onPeriod: m => { state.months = m; prefs.set('months', String(m)); render(); },
+    onSeeAll: v => { state.rankView = v; prefs.set('rankView', v); go('ranking'); },
     onImport: () => go('ajustes'),
     avatarFor: name => artistAvatar(name),
-    coverFor: t => trackCover(t, known())
+    coverFor: t => trackCover(t, known()),
+    albumCoverFor: r => coverEl(r)
   });
 }
 
