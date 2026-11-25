@@ -57,7 +57,8 @@ export function rediscoverView(ctx) {
           r.inPlaylist ? h('span', { class: 'chip ok' }, 'en playlist') : null)),
       h('button', { class: 'btn sec sm', type: 'button', 'aria-label': `No me interesa ${r.artist}`, title: kind === 'artists' ? 'No me interesa este artista' : 'No me interesa este artista (se ocultan también sus canciones)',
         onclick: () => { writeExcluded([...excluded, r.artist]); ctx.toast(`Ocultado: ${r.artist}`); redo(); } }, 'No'))))));
-    root.append(h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => createPlaylistFlow(ctx, st.effStats, list, kind, plist) }, 'Crear playlist con esto')));
+    // barra fija abajo: el botón se ve siempre, sin tener que llegar al final de la lista
+    root.append(h('div', { class: 'fabbar' }, h('button', { class: 'btn', onclick: () => createPlaylistFlow(ctx, st.effStats, list, kind, plist) }, '▶ Crear playlist con esto')));
   }
 
   if (excluded.length) {

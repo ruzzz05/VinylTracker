@@ -303,3 +303,42 @@ details.dt th, details.dt td { text-align: left; padding: 3px 4px; border-bottom
 /* Olvidados */
 .frow .btn.sm { padding: 6px 12px; }
 .frow .t span { white-space: normal; }
+
+/* ---------- Cabecera: Ajustes como icono ---------- */
+.top .status:empty { display: none; }
+.top h1 { flex: 1; min-width: 0; }
+.gear { flex: none; width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.gear svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.gear[aria-current="page"] { color: var(--acc2); background: var(--surface); }
+
+/* ---------- Estadísticas: sub-navegación y mosaico ---------- */
+.subnav { margin-top: 4px; }
+.subnav button { font-size: .8rem; padding: 7px 2px; }
+.bento { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 12px; }
+.bt { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left; width: 100%; min-width: 0; padding: 14px; border: 0; border-radius: 18px; background: var(--surface); color: inherit; font: inherit; cursor: pointer; }
+.bt:active { transform: scale(.985); }
+.bt.wide { grid-column: span 2; }
+.bt .bl { font-size: .74rem; color: var(--muted); letter-spacing: .02em; }
+.bt .bv { font-size: 1.45rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; }
+.bt .bs { font-size: .78rem; color: var(--muted); }
+.bt .bn { font-size: 1.05rem; font-weight: 700; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.bt .bn2 { margin: 2px 0 0; font-size: .95rem; line-height: 1.35; }
+.bt .delta { margin-top: 0; }
+.bt.hero2 { background: linear-gradient(160deg, color-mix(in srgb, var(--acc2) 24%, var(--surface)), var(--surface) 70%); padding: 16px; }
+.bt.hero2 .big { font-size: 2.6rem; margin: 2px 0; }
+.bt.row2 { flex-direction: row; align-items: center; gap: 12px; }
+.bt.row2 .bx { min-width: 0; display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.bt.row2 .avwrap, .bt.row2 .covwrap { flex: none; }
+.bt.fun { background: color-mix(in srgb, var(--acc2) 12%, var(--surface)); }
+.spark { display: flex; align-items: flex-end; gap: 3px; width: 100%; margin-top: 8px; }
+.spark i { flex: 1; min-width: 2px; max-width: 22px; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--viz) 45%, var(--surface2)); }
+.spark i.hl { background: var(--viz); }
+.ring { position: relative; width: 74px; height: 74px; border-radius: 50%; background: conic-gradient(var(--viz) var(--deg), var(--surface2) 0); display: flex; align-items: center; justify-content: center; margin: 4px 0; }
+.ring::before { content: ''; position: absolute; inset: 9px; border-radius: 50%; background: var(--surface); }
+.ring b, .ring small { position: relative; }
+.ring b { font-size: 1.25rem; font-weight: 800; }
+.ring small { font-size: .7rem; color: var(--muted); margin-left: 1px; align-self: flex-end; padding-bottom: 22px; }
+
+/* ---------- Olvidados: botón de crear playlist siempre a mano ---------- */
+.fabbar { position: sticky; bottom: 10px; z-index: 5; margin-top: 14px; }
+.fabbar .btn { width: 100%; padding: 14px 16px; box-shadow: 0 10px 28px #0006; }

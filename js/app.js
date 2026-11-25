@@ -10,7 +10,8 @@ import { readSpotifyZip } from './zip.js';
 import { h, safeUrl } from './dom.js';
 import { buildStats, mergeStats } from './stats.js';
 import * as L from './live.js';
-import { artistsView, tracksView, statsView } from './statsview.js';
+import { artistsView, tracksView, statsPage } from './statsview.js';
+import { artistAvatar } from './artists.js';
 import * as W from './wishlist.js';
 import * as addview from './addview.js';
 import { rediscoverView, preload as preloadRediscover } from './rediscoverview.js';
@@ -21,7 +22,7 @@ import { concertsView } from './concertsview.js';
 import { trackCover, albumCover, knownCovers } from './covers.js';
 import * as imgcache from './imgcache.js';
 
-const VERSION = '1.10.0';
+const VERSION = '1.11.0';
 const applyTheme = v => { if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; };
 applyTheme(prefs.get('theme'));
 // iOS (app instalada): al abrirla, el alto del documento a veces sale ~59 px más corto que la pantalla
@@ -73,7 +74,7 @@ const state = {
   history: {}, apiAlbums: {}, apiAt: 0, historyInfo: null,
   base: [], extras: [], extrasBad: [], extrasAt: 0, owned: null, collection: [],
   storeIndex: [], storeDate: '',
-  stats: null, rankView: prefs.get('rankView', 'albums'),
+  stats: null, rankView: prefs.get('rankView', 'albums') === 'stats' ? 'albums' : prefs.get('rankView', 'albums'), statsPage: prefs.get('statsPage', 'resumen'),
   live: L.emptyLive(), liveStats: null, liveHistory: {}, effStats: null, effHistory: {},
   now: undefined, nowError: '', liveBusy: false, liveError: '',
   csvAt: 0, syncing: false, syncError: '',
@@ -133,15 +134,31 @@ function go(tab) {
   view.scrollTop = 0;
 }
 function markTab() {
-  document.querySelectorAll('.tabs button').forEach(b => {
+  document.querySelectorAll('[data-tab]').forEach(b => {
     if (b.dataset.tab === state.tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
 }
-document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => go(b.dataset.tab)));
+document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => go(b.dataset.tab)));
 
 function render() {
-  view.replaceChildren(({ ranking: vRanking, coleccion: vCollection, comprar: vBuy, conciertos: vConcerts, ajustes: vSettings })[state.tab]());
+  view.replaceChildren(({ ranking: vRanking, stats: vStats, coleccion: vCollection, comprar: vBuy, conciertos: vConcerts, ajustes: vSettings })[state.tab]());
   setStatus('');
+}
+
+// ---------- Estadísticas (pestaña propia: mosaico + páginas) ----------
+function vStats() {
+  return statsPage({
+    stats: state.effStats, history: state.effHistory, collection: state.collection, ranking: rankingList().slice(0, 40),
+    months: state.months, page: state.statsPage, now: new Date(),
+    onPage: (p, m) => {
+      state.statsPage = p; prefs.set('statsPage', p);
+      if (m !== undefined) { state.months = m; prefs.set('months', String(m)); }
+      render(); view.scrollTop = 0;
+    },
+    onImport: () => go('ajustes'),
+    avatarFor: name => artistAvatar(name),
+    coverFor: t => trackCover(t, known())
+  });
 }
 
 // ---------- Ranking ----------
@@ -176,7 +193,7 @@ function albumRow(r, i) {
     metric(r)));
 }
 
-const RANK_VIEWS = [['albums', 'Álbumes'], ['artists', 'Artistas'], ['tracks', 'Canciones'], ['forgotten', 'Olvidados'], ['stats', 'Estadísticas']];
+const RANK_VIEWS = [['albums', 'Álbumes'], ['artists', 'Artistas'], ['tracks', 'Canciones'], ['forgotten', 'Olvidados']];
 
 function rankTabs() {
   return h('div', { class: 'seg', role: 'group', 'aria-label': 'Vista' },
@@ -203,14 +220,9 @@ function vRanking() {
   if (view === 'artists') { root.append(artistsView({ stats: state.effStats, apiAlbums: state.apiAlbums, months: state.months, onImport: goSettings })); return root; }
   if (view === 'tracks') { root.append(tracksView({ stats: state.effStats, months: state.months, onImport: goSettings,
     cover: t => trackCover(t, known()) })); return root; }
-  if (view === 'stats') {
-    root.append(statsView({ stats: state.effStats, history: state.effHistory, collection: state.collection, ranking: rankingList().slice(0, 40),
-      months: state.months, onImport: goSettings }));
-    return root;
-  }
   if (!hasHistory && !hasApi) {
     root.append(h('div', { class: 'empty' }, h('p', null, 'Tu export no trae nombres de álbum.'),
-      h('p', { class: 'muted' }, 'Es el paquete básico ("Datos de la cuenta"). Mira Artistas, Canciones y Estadísticas. Para ver álbumes, conecta Spotify o importa el "Historial de reproducciones ampliado".')));
+      h('p', { class: 'muted' }, 'Es el paquete básico ("Datos de la cuenta"). Mira Artistas, Canciones y la pestaña Estadísticas. Para ver álbumes, conecta Spotify o importa el "Historial de reproducciones ampliado".')));
     return root;
   }
   if (!hasHistory) root.append(h('p', { class: 'muted' }, 'Ranking aproximado con tus tops de Spotify. Para minutos reales importa el export de tu historial en Ajustes.'));
@@ -827,8 +839,7 @@ async function importHistory(files) {
     state.live = L.pruneLive(state.live, stats.total.lastTs); await store.set('live', state.live); recompute();
     scheduleCloud('history', 'live');
     toast(info.basic ? `Importado: ${S_fmt(stats.total.plays)} reproducciones (sin álbumes: es el paquete básico)` : `Historial importado: ${info.albums} álbumes`);
-    if (info.basic && state.rankView === 'albums') { state.rankView = 'stats'; prefs.set('rankView', 'stats'); }
-    go('ranking');
+    go(info.basic ? 'stats' : 'ranking');
   } catch (e) { toast(e.message, true); setStatus(''); }
 }
 const S_fmt = n => new Intl.NumberFormat('es-ES').format(n);

@@ -166,24 +166,55 @@ assert.match(await page.textContent('#view'), /Nirvana/);
 await view('Canciones');
 await page.waitForSelector('.row.static');
 assert.ok((await page.$$('.row.static')).length >= 5, 'faltan canciones');
-await view('Estadísticas');
-await page.waitForSelector('.hero .big');
-assert.equal((await page.$$('.cc')).length, 2, 'deben salir las dos gráficas de columnas');
-assert.ok((await page.$$('.hm-c')).length >= 168, 'falta el mapa de calor');
-await page.locator('.cc-col').nth(11).scrollIntoViewIfNeeded();
-await page.waitForTimeout(400);                     // el scroll oculta el globo: se espera a que termine antes de tocar
-await page.click('.cc-col >> nth=11');
-await page.waitForSelector('.tip:not([hidden])');
-assert.match(await page.textContent('.tip'), /min|h/);
-const stxt = await page.textContent('#view');
-for (const t of ['Minutos por mes', 'Minutos por día', 'Cuándo escuchas', 'Récords y rachas', 'Cómo escuchas', 'Tu vinilo y tu Spotify', 'Curiosidades de plato', 'Tu colección'])
-  assert.ok(stxt.includes(t), 'falta la tarjeta: ' + t);
-{ const bad = /.{0,40}(NaN|undefined|null|Infinity).{0,40}/.exec(stxt); assert.ok(!bad, 'valores inválidos en las estadísticas: «' + (bad && bad[0]) + '»'); }
-// captura larga de toda la pantalla de estadísticas (para revisarla a ojo)
-await page.setViewportSize({ width: 393, height: 3400 });
-await page.waitForTimeout(300);
-await page.screenshot({ path: path.join(SHOTS, '2b-estadisticas-larga.png') });
-await page.setViewportSize({ width: 393, height: 664 });
+// Estadísticas: pestaña propia con un mosaico de resumen y cinco páginas
+await page.click('[data-tab=stats]');
+await page.waitForSelector('.bento');
+assert.ok((await page.$$('.bt')).length >= 8, 'faltan baldosas en el mosaico');
+{ const t = await page.textContent('#view'); const bad = /.{0,40}(NaN|undefined|null|Infinity).{0,40}/.exec(t); assert.ok(!bad, 'valores inválidos en el resumen: «' + (bad && bad[0]) + '»'); }
+await page.screenshot({ path: path.join(SHOTS, '2b-estadisticas-mosaico.png') });
+const subpage = async (name, check) => {
+  await page.click(`.subnav button:has-text("${name}")`);
+  await page.waitForSelector(`.subnav button[aria-pressed=true]:has-text("${name}")`);
+  await check();
+  const t = await page.textContent('#view');
+  const bad = /.{0,40}(NaN|undefined|null|Infinity).{0,40}/.exec(t); assert.ok(!bad, `valores inválidos en «${name}»: «${bad && bad[0]}»`);
+  await page.setViewportSize({ width: 393, height: 2400 }); await page.waitForTimeout(250);
+  await page.screenshot({ path: path.join(SHOTS, `2c-estadisticas-${name.toLowerCase().replace('é', 'e').replace('á', 'a').replace('í', 'i')}.png`) });
+  await page.setViewportSize({ width: 393, height: 664 });
+};
+await subpage('Tiempo', async () => {
+  await page.waitForSelector('.hero .big');
+  assert.equal((await page.$$('.cc')).length, 2, 'deben salir las dos gráficas de columnas');
+  await page.locator('.cc-col').nth(11).scrollIntoViewIfNeeded();
+  await page.waitForTimeout(400);                     // el scroll oculta el globo: se espera a que termine antes de tocar
+  await page.click('.cc-col >> nth=11');
+  await page.waitForSelector('.tip:not([hidden])');
+  assert.match(await page.textContent('.tip'), /min|h/);
+  const t = await page.textContent('#view');
+  for (const x of ['Minutos por mes', 'Minutos por día', 'Curiosidades de plato']) assert.ok(t.includes(x), 'falta: ' + x);
+});
+await subpage('Hábitos', async () => {
+  await page.waitForSelector('.hm-c');
+  assert.ok((await page.$$('.hm-c')).length >= 168, 'falta el mapa de calor');
+  assert.equal((await page.$$('.cc')).length, 1, 'falta la gráfica por hora');
+  const t = await page.textContent('#view');
+  for (const x of ['Cuándo escuchas', 'Por hora del día', 'Por día de la semana', 'Cómo escuchas']) assert.ok(t.includes(x), 'falta: ' + x);
+});
+await subpage('Récords', async () => {
+  const t = await page.textContent('#view');
+  for (const x of ['Récords y rachas', 'Lo más escuchado']) assert.ok(t.includes(x), 'falta: ' + x);
+});
+await subpage('Vinilo', async () => {
+  const t = await page.textContent('#view');
+  for (const x of ['Tu vinilo y tu Spotify', 'Tu colección']) assert.ok(t.includes(x), 'falta: ' + x);
+});
+// tocar una baldosa lleva a su página
+await page.click('.subnav button:has-text("Resumen")');
+await page.waitForSelector('.bento');
+await page.click('.bt.hero2');
+await page.waitForSelector('.subnav button[aria-pressed=true]:has-text("Tiempo")');
+await page.click('.subnav button:has-text("Resumen")');
+await page.click('[data-tab=ranking]');
 await view('Álbumes');
 await page.waitForSelector('.row:not(.static)');
 
@@ -440,12 +471,13 @@ await page.click('#live-refresh');
 await page.waitForFunction(() => document.querySelector('#live-dot')?.dataset.state === 'ok' && !document.querySelector('#live-refresh')?.disabled);
 await page.click('[data-tab=ajustes]');
 await page.waitForSelector('text=En vivo: 2 reproducciones guardadas');
-await page.click('[data-tab=ranking]');
-await page.click('.seg button:has-text("Estadísticas")');
+await page.click('[data-tab=stats]');
+await page.click('.subnav button:has-text("Tiempo")');
 await page.waitForSelector('.hero .big');
 const hoy = await page.textContent('.tiles');
 assert.match(hoy, /Hoy/);
 assert.ok(!/NaN|undefined|null/.test(await page.textContent('#view')));
+await page.click('[data-tab=ranking]');
 // Fotos de artista (Spotify conectado): Nirvana debe cambiar la inicial por su foto
 await page.click('.seg button:has-text("Artistas")');
 await page.waitForSelector('.row.static .avwrap img.cover.round');
@@ -494,6 +526,9 @@ await page.click('.sheet >> text=Importar las marcadas');
 await page.waitForSelector('.sheet', { state: 'hidden' });
 await page.waitForSelector('.frow:has-text("Artista Perdido")');
 assert.match(await page.textContent('.frow:has-text("Artista Perdido")'), /en playlist/);
+// el botón de crear playlist queda siempre a la vista (barra fija abajo), sin tener que bajar por la lista
+{ const box = await page.locator('.fabbar .btn').boundingBox(), vp = page.viewportSize();
+  assert.ok(box && box.y >= 0 && box.y + box.height <= vp.height - 50, 'el botón de crear playlist no está a la vista: ' + JSON.stringify(box)); }
 await page.screenshot({ path: path.join(SHOTS, '7f-olvidados.png') });
 // «No»: se oculta y queda en la lista de excluidos (y se puede volver a incluir)
 await page.click('.frow:has-text("Viejo") >> text=No');
@@ -540,8 +575,9 @@ await p3.goto(BASE);
 await p3.click('[data-tab=ajustes]');
 await p3.setInputFiles('input[type=file]', path.join(SHOTS, 'StreamingHistory_music_0.json'));
 await p3.click('text=Importar');
-await p3.waitForSelector('.hero .big');                                   // salta a Estadísticas porque no hay álbumes
+await p3.waitForSelector('.bento');                                        // salta a Estadísticas porque no hay álbumes
 assert.ok(!/NaN|undefined|null/.test(await p3.textContent('#view')));
+await p3.click('[data-tab=ranking]');
 await p3.click('.seg button:has-text("Artistas")');
 await p3.waitForSelector('.row.static');
 assert.match(await p3.textContent('#view'), /Nirvana/);
