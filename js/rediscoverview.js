@@ -127,8 +127,10 @@ async function createPlaylistFlow(ctx, S, list, kind, plist) {
     // La playlist se crea ANTES de buscar: si Spotify no deja crearla, se sabe al momento y no tras esperar a las 45 búsquedas
     status.textContent = 'Creando la playlist…';
     const name = `Redescubre · ${new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}`;
-    pl = await spotify.createPlaylist(name, 'Lo que escuchabas mucho y hace tiempo que no suena. Creada con VinylTracker.');
-    const uris = [];
+    let blocked = null;
+    try { pl = await spotify.createPlaylist(name, 'Lo que escuchabas mucho y hace tiempo que no suena. Creada con VinylTracker.'); }
+    catch (e) { if (e.status === 403) blocked = e; else throw e; }       // Spotify no deja crearla desde esta app: se buscan igual y se da la lista
+    const uris = [], found = [];
     let lastErr = null;
     for (let i = 0; i < tracks.length; i++) {
       status.textContent = `Buscando canciones en Spotify… ${i + 1}/${tracks.length}`;
@@ -138,9 +140,10 @@ async function createPlaylistFlow(ctx, S, list, kind, plist) {
         try { u = await spotify.findTrackUri(t.artist, t.name); }
         catch (e) { lastErr = e; if (/rechaz/.test(e.message)) break; }       // permiso caducado: no tiene sentido seguir
       }
-      if (u && !uris.includes(u)) uris.push(u);
+      if (u && !uris.includes(u)) { uris.push(u); found.push({ u, t }); }
     }
     if (!uris.length) throw new Error(lastErr ? 'Spotify no deja buscar: ' + lastErr.message : 'No encontré ninguna de las canciones en Spotify.');
+    if (blocked) { showTrackList(ctx, body, found, tracks.length); return; }
     status.textContent = 'Añadiendo las canciones…';
     await spotify.addToPlaylist(pl.id, uris);
     const url = (pl.external_urls || {}).spotify || `https://open.spotify.com/playlist/${pl.id}`;
@@ -149,4 +152,17 @@ async function createPlaylistFlow(ctx, S, list, kind, plist) {
   } catch (e) {
     if (pl && pl.id) spotify.dropPlaylist(pl.id);           // no se deja una playlist vacía
     body.replaceChildren(errorBlock(ctx, e), h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: ctx.closeSheet }, 'Cerrar'))); }
+}
+
+// Spotify no deja crear playlists a esta app (403): se enseña la lista encontrada para pasarla a mano
+function showTrackList(ctx, body, found, total) {
+  const link = f => 'https://open.spotify.com/track/' + String(f.u).split(':').pop();
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(found.map(link).join('\n')); ctx.toast('Enlaces copiados'); } catch (e) { ctx.toast('No se pudo copiar', true); }
+  };
+  body.replaceChildren(
+    h('p', { class: 'muted' }, 'Spotify no deja crear playlists desde la app (error 403). Estas son las canciones' + (found.length < total ? ` (${total - found.length} no se encontraron)` : '') + ':'),
+    h('ul', { class: 'list' }, found.map((f, i) => h('li', null, h('a', { class: 'row static frow', href: link(f), target: '_blank', rel: 'noopener' },
+      h('div', { class: 'n' }, i + 1), h('div', { class: 't' }, h('b', null, f.t.name), h('span', null, f.t.artist)), h('div', { class: 'm' }, '↗'))))),
+    h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: copy }, 'Copiar enlaces'), h('button', { class: 'btn sec', onclick: ctx.closeSheet }, 'Cerrar')));
 }
