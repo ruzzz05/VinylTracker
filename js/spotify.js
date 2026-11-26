@@ -77,7 +77,7 @@ async function tokenRequest(body) {
 function saveToken(t) {
   const prev = JSON.parse(prefs.get('spotify.token', '{}'));
   prefs.set('spotify.token', JSON.stringify({
-    access: t.access_token, refresh: t.refresh_token || prev.refresh,
+    access: t.access_token, refresh: t.refresh_token || prev.refresh, scope: t.scope || prev.scope || '',
     exp: Date.now() + (t.expires_in || 3600) * 1000 - 60000
   }));
 }
@@ -187,7 +187,12 @@ const scopeErr = () => Object.assign(new Error('Falta el permiso de playlists: v
 async function call(method, path, { params, body } = {}) {
   const q = params ? '?' + new URLSearchParams(params) : '';
   const r = await fetch(API + path + q, { method, headers: { Authorization: 'Bearer ' + await token(), ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
-  if (r.status === 401 || r.status === 403) throw scopeErr();
+  if (r.status === 401 || r.status === 403) {
+    const msg = ((await r.json().catch(() => ({}))).error || {}).message || '';
+    const granted = JSON.parse(prefs.get('spotify.token', '{}')).scope;
+    if (r.status === 401 || (granted && !/playlist-modify/.test(granted))) throw scopeErr();            // de verdad falta el permiso: reconectar lo arregla
+    throw Object.assign(new Error(`Spotify rechazó la petición (403${msg ? ': ' + msg : ''}). Con el permiso ya concedido, suele ser porque la app de Spotify está en modo desarrollo y tu cuenta no está añadida como usuario, o la cuenta dueña de la app no es Premium.`), { status: 403 });
+  }
   if (r.status === 404) throw Object.assign(new Error('Spotify no encontró eso (404).'), { status: 404 });
   if (!r.ok) throw new Error('Spotify respondió ' + r.status);
   return r.status === 204 ? {} : r.json();
@@ -220,8 +225,16 @@ export async function playlistItems(id, progress = () => {}) {
 }
 
 export async function createPlaylist(name, description) {
-  return call('POST', '/me/playlists', { body: { name, description, public: false } });
+  try { return await call('POST', '/me/playlists', { body: { name, description, public: false } }); }
+  catch (e) {
+    if (e.status !== 403 && e.status !== 404) throw e;
+    const me = await call('GET', '/me');           // ruta antigua: POST /users/{id}/playlists
+    return call('POST', `/users/${encodeURIComponent(me.id)}/playlists`, { body: { name, description, public: false } });
+  }
 }
+
+// Quita (deja de seguir) una playlist; sirve para borrar la que se acaba de crear si al final no hay canciones
+export async function dropPlaylist(id) { try { await call('DELETE', `/playlists/${encodeURIComponent(id)}/followers`); } catch (e) { /* si no se puede, queda vacía */ } }
 
 export async function addToPlaylist(id, uris) {
   for (let i = 0; i < uris.length; i += 100) await call('POST', `/playlists/${encodeURIComponent(id)}/tracks`, { body: { uris: uris.slice(i, i + 100) } });

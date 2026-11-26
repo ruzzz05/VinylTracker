@@ -122,7 +122,12 @@ async function createPlaylistFlow(ctx, S, list, kind, plist) {
   const status = h('p', { class: 'muted', role: 'status' }, `Buscando ${tracks.length} canciones en Spotify…`);
   const body = h('div', null, status);
   ctx.showPanel(h('h2', null, 'Crear playlist'), body);
+  let pl = null;
   try {
+    // La playlist se crea ANTES de buscar: si Spotify no deja crearla, se sabe al momento y no tras esperar a las 45 búsquedas
+    status.textContent = 'Creando la playlist…';
+    const name = `Redescubre · ${new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+    pl = await spotify.createPlaylist(name, 'Lo que escuchabas mucho y hace tiempo que no suena. Creada con VinylTracker.');
     const uris = [];
     let lastErr = null;
     for (let i = 0; i < tracks.length; i++) {
@@ -136,12 +141,12 @@ async function createPlaylistFlow(ctx, S, list, kind, plist) {
       if (u && !uris.includes(u)) uris.push(u);
     }
     if (!uris.length) throw new Error(lastErr ? 'Spotify no deja buscar: ' + lastErr.message : 'No encontré ninguna de las canciones en Spotify.');
-    status.textContent = 'Creando la playlist…';
-    const name = `Redescubre · ${new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}`;
-    const pl = await spotify.createPlaylist(name, 'Lo que escuchabas mucho y hace tiempo que no suena. Creada con VinylTracker.');
+    status.textContent = 'Añadiendo las canciones…';
     await spotify.addToPlaylist(pl.id, uris);
     const url = (pl.external_urls || {}).spotify || `https://open.spotify.com/playlist/${pl.id}`;
     body.replaceChildren(h('p', { class: 'own' }, `✓ Playlist creada con ${uris.length} canciones${uris.length < tracks.length ? ` (${tracks.length - uris.length} no se encontraron)` : ''}.`),
       h('div', { class: 'btns' }, h('a', { class: 'btn', href: url, target: '_blank', rel: 'noopener' }, 'Abrir en Spotify'), h('button', { class: 'btn sec', onclick: ctx.closeSheet }, 'Cerrar')));
-  } catch (e) { body.replaceChildren(errorBlock(ctx, e), h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: ctx.closeSheet }, 'Cerrar'))); }
+  } catch (e) {
+    if (pl && pl.id) spotify.dropPlaylist(pl.id);           // no se deja una playlist vacía
+    body.replaceChildren(errorBlock(ctx, e), h('div', { class: 'btns' }, h('button', { class: 'btn sec', onclick: ctx.closeSheet }, 'Cerrar'))); }
 }
